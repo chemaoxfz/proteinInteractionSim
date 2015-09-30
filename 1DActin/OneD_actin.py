@@ -67,7 +67,7 @@ process)
 """
 import numpy as np
 import random
-#import pdb
+import pdb
 import pickle
 #import cProfile
 import sys
@@ -245,24 +245,24 @@ def TE_simulation(fileName,initParams,T_array,simPerPt=1,obsStart=50,obsDur=50,x
     states=np.empty([len(T_array),simPerPt],dtype=np.object)
     filler(energies,energies)
     filler(states,states)
+    stepSizeVec=np.zeros(len(T_array))
     stats={'initParams':initParams,'simPerPt':simPerPt,'obsStart':obsStart,'obsDur':obsDur,'xi':xi,
-           'energy':energies,'temperature':T_array, 'states':states}    
+           'energy':energies,'temperature':T_array, 'states':states,'stepSize':stepSizeVec}    
     for idx_T in range(len(T_array)):
         T=T_array[idx_T]
         initParams['T']=T
         
-        charTime=np.exp(-xi/T)
+        charTime=max(min(np.exp(-xi/T),1e5),10)
         stepSize=np.floor(charTime)
-        numDataPts=np.ceil(obsDur/stepSize)
-        
-        for repeat in np.arange(simPerPt):
+        stepSizeVec[idx_T]=stepSize
+        numDataPts=np.int(np.ceil(obsDur/stepSize))
+        for repeat in xrange(simPerPt):
             intSp=InteractionSpace(initParams)
-            for t in np.arange(obsStart): 
+            for t in xrange(obsStart): 
                 intSp.step()
-            for t in np.arange(numDataPts):
+            for t in xrange(numDataPts):
                 energies[idx_T][repeat].append(intSp.currentE)
                 states[idx_T][repeat].append(intSp.state)
-#                pdb.set_trace()
                 stats['states']=states
                 pickle.dump(stats,open(fileName,'wb'))
                 for idx in np.arange(stepSize):
