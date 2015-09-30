@@ -66,11 +66,11 @@ process)
 3. use some fitness function other than E.
 """
 import numpy as np
-import matplotlib.pyplot as plt
 import random
-import pdb
-import matplotlib.animation as animation
+#import pdb
 import pickle
+#import cProfile
+import sys
 
 class InteractionSpace:
     def __init__(self,initParams):
@@ -240,68 +240,37 @@ def update_plot(i):
     return points,time_text,energy_text
 
 def TE_simulation(fileName,initParams,T_array,simPerPt=1,obsStart=50,obsDur=50,xi=0.05):
-    energies=np.zeros([len(T_array),simPerPt,obsDur])
-    states=[]
+    filler = np.frompyfunc(lambda x: list(), 1, 1)
+    energies=np.empty([len(T_array),simPerPt],dtype=np.object)
+    states=np.empty([len(T_array),simPerPt],dtype=np.object)
+    filler(energies,energies)
+    filler(states,states)
+    stats={'initParams':initParams,'simPerPt':simPerPt,'obsStart':obsStart,'obsDur':obsDur,'xi':xi,
+           'energy':energies,'temperature':T_array, 'states':states}    
     for idx_T in range(len(T_array)):
         T=T_array[idx_T]
         initParams['T']=T
-        charTime=np.exp(-xi/T)
-        count=0
-        for repeat in xrange(simPerPt):
-            intSp=InteractionSpace(initParams)
-            for t in xrange(obsStart): 
-                intSp.step()
-            for t in xrange(obsDur):
-                energies[idx_T][repeat][t]=intSp.currentE
-                if t>obsStart+charTime*count:
-                    states.append(intSp.state)
-#                    pdb.set_trace()
-                    count+=1
-                intSp.step()
-    stats={'initParams':initParams,'simPerPt':simPerPt,'obsStart':obsStart,'obsDur':obsDur,'xi':xi,
-           'energy':energies,'temperature':T_array, 'states':states}    
-    pickle.dump(stats,open(fileName,'wb'))
-    
-
-def TE_animate(fileName,initParams,interval,frames):
-    global intSp
-    global deviation
-    global points
-    global centers
-    global time_text
-    global energy_text
-    intSp=InteractionSpace(initParams)
-    m=initParams['m']
-    N=initParams['N']
-    h=initParams['h']
-    fig=plt.figure()
-    ax=fig.add_subplot(111,autoscale_on=False,xlim=(-1,N),ylim=(-N/5.,N/5.))
-    deviation=0.3 #deviation is the distance between the center of right domain from left domain of the same protein
         
-    x = np.tile(intSp.state[0],2)+np.concatenate((np.zeros(m),np.ones(m)*deviation))
-    x = np.ravel(np.reshape(x,[2,m]),1)
-    y = np.zeros(2*m)
-    z = np.vstack((x,y)).transpose()
-    #currently 1 is yellow, 0 is black. so barbed is yellow. pointed is black.
-    colors = np.lib.pad(np.repeat(np.reshape(intSp.state[1].flatten()*1/float(k-1),[2*m,1]),2,axis=1),(0,1),'constant',constant_values=(0))
-    points=ax.scatter(x,y,s=np.pi*30,c=colors)   
-    
-    xcenters=intSp.state[0]+deviation/2
-    ycenters=np.zeros(m)
-    colorscenters = np.zeros([3,m])
-    colorscenters[2]=intSp.state[2]*1/float(h-1)
-    colorscenters[0]=1-colorscenters[2]
-    colorscenters=colorscenters.T
-    centers=ax.scatter(xcenters,ycenters,s=np.pi*30,c=colorscenters,marker=(5,0))    
-    
-    time_text=ax.text(0.02,0.95,'',transform=ax.transAxes)
-    energy_text=ax.text(0.02,0.90,'',transform=ax.transAxes)
-    ani=animation.FuncAnimation(fig,update_plot,
-                                interval=interval,frames=frames,blit=False)
-#    ani.save(fileName+'.gif',writer='imagemagick',fps=8)
-    ax.show()
-    
-if __name__ == "__main__":
+        charTime=np.exp(-xi/T)
+        stepSize=np.floor(charTime)
+        numDataPts=np.ceil(obsDur/stepSize)
+        
+        for repeat in np.arange(simPerPt):
+            intSp=InteractionSpace(initParams)
+            for t in np.arange(obsStart): 
+                intSp.step()
+            for t in np.arange(numDataPts):
+                energies[idx_T][repeat].append(intSp.currentE)
+                states[idx_T][repeat].append(intSp.state)
+#                pdb.set_trace()
+                stats['states']=states
+                pickle.dump(stats,open(fileName,'wb'))
+                for idx in np.arange(stepSize):
+                    intSp.step()
+    pickle.dump(stats,open(fileName,'wb'))
+
+
+def main(fName,start,dur):
     
     N=100
 #    N=4
@@ -313,7 +282,7 @@ if __name__ == "__main__":
     m=20
 #    m=2
     
-    timestep=1000
+    timestep=1
     isCircular=True
     transRotRatio=1.0
     probFormChange=0.33
@@ -371,6 +340,15 @@ if __name__ == "__main__":
 
                 
     #Save result to file
-#    T_array=np.logspace(-3,1,num=10)
-    T_array=np.array([1e-2])
-    TE_simulation('1DActin.p',initParams,T_array,simPerPt=1,obsStart=150,obsDur=300,xi=xi)
+    T_array=np.logspace(-3,1,num=10)
+#    T_array=np.array([1e-2])
+    
+    TE_simulation(fName,initParams,T_array,simPerPt=1,obsStart=start,obsDur=dur,xi=xi)
+
+
+if __name__ == "__main__":
+#    cProfile.run('main()','profile.tmp')
+    fName = sys.arg[1]
+    start = int(sys.arg[2])
+    dur = int(sys.arg[3])
+    main(fName,start,dur)
