@@ -348,7 +348,7 @@ def main(fName,start,dur):
 
 if __name__ == "__main__":
 #    cProfile.run('main()','profile.tmp')
-    fName = sys.arg[1]
-    start = int(sys.arg[2])
-    dur = int(sys.arg[3])
+    fName = sys.argv[1]
+    start = int(sys.argv[2])
+    dur = int(sys.argv[3])
     main(fName,start,dur)
