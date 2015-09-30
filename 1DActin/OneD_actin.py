@@ -270,7 +270,7 @@ def TE_simulation(fileName,initParams,T_array,simPerPt=1,obsStart=50,obsDur=50,x
     pickle.dump(stats,open(fileName,'wb'))
 
 
-def main(fName,start,dur):
+def main(fName,start,dur,hydroFlag=True):
     
     N=100
 #    N=4
@@ -285,7 +285,9 @@ def main(fName,start,dur):
     timestep=1
     isCircular=True
     transRotRatio=1.0
-    probFormChange=0.33
+    if hydroFlag==False:
+        probFormChange=0.
+    else: probFormChange=0.33
     m_array=[[0,20],[0,0]]
 #    m_array=[[0,2],[0,0]]
     
@@ -351,4 +353,8 @@ if __name__ == "__main__":
     fName = sys.argv[1]
     start = int(sys.argv[2])
     dur = int(sys.argv[3])
-    main(fName,start,dur)
+    if len(sys.argv)>3:
+        hydroFlag=int(sys.argv[4])   
+        main(fName,start,dur,hydroFlag)
+        
+    else: main(fName,start,dur)
