@@ -331,6 +331,7 @@ def main(fName,start,dur,hydroFlag=True):
     
     H_array=None
     H_end=None
+    xi=0.5
     
     initParams={'N':N,'m':np.sum(m_array),'k':k,'h':h,'T':T,'xi':xi,'m':m,
                 'timestep':timestep,'isCircular':isCircular,
