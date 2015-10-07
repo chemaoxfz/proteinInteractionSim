@@ -252,8 +252,8 @@ def TE_simulation(fileName,initParams,T_array,xi_array,simPerPt=1,obsStart=50,ob
     for idx in xrange(len(xiTStack)):
         xi,T=xiTStack[idx]
         initParams['T']=T
-        initParams['H_array']=H_array_gen(initParams['h'],initParams['k'],xi,-1.,T)
-        
+        initParams['H_array'],initParams['H_end']=H_array_gen(initParams['h'],initParams['k'],xi,-1.,T)
+        initParams['H_end']
         charTime=max(min(np.exp(-xi/T),1e5),10)
         stepSize=np.floor(charTime)
         stepSizeVec[idx]=stepSize
@@ -281,6 +281,7 @@ def H_array_gen(h=2,k=2,xi=-0.05,eps=-1.,T=1e-2):
     H_array[1][1]=np.array([[0,xi],
                            [xi,0]])
     H_end=np.zeros([h,k])
+    return H_array, H_end
 
 
 def main(fName,start,dur,hydroFlag=True):
