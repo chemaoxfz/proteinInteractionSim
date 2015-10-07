@@ -271,7 +271,7 @@ def TE_simulation(fileName,initParams,T_array,xi_array,simPerPt=1,obsStart=50,ob
                     intSp.step()
     pickle.dump(stats,open(fileName,'wb'))
 
-def H_array_gen(h=2,k=2,xi=-0.05,epsilon=-1.,T=1e-2):
+def H_array_gen(h=2,k=2,xi=-0.05,eps=-1.,T=1e-2):
     H_array=np.zeros([h,h,k,k])
     H_array[0][0]=np.array([[0,eps],
                            [eps,0]])
