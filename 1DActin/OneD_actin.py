@@ -239,18 +239,20 @@ def update_plot(i):
     energy_text.set_text('energy=%.1f' % intSp.energy(intSp.state))
     return points,time_text,energy_text
 
-def TE_simulation(fileName,initParams,T_array,simPerPt=1,obsStart=50,obsDur=50,xi=0.05):
+def TE_simulation(fileName,initParams,T_array,xi_array,simPerPt=1,obsStart=50,obsDur=50,xi=0.05):
     filler = np.frompyfunc(lambda x: list(), 1, 1)
-    energies=np.empty([len(T_array),simPerPt],dtype=np.object)
-    states=np.empty([len(T_array),simPerPt],dtype=np.object)
+    energies=np.empty([len(xi_array),len(T_array),simPerPt],dtype=np.object)
+    states=np.empty([len(xi_array),len(T_array),simPerPt],dtype=np.object)
     filler(energies,energies)
     filler(states,states)
-    stepSizeVec=np.zeros(len(T_array))
-    stats={'initParams':initParams,'simPerPt':simPerPt,'obsStart':obsStart,'obsDur':obsDur,'xi':xi,
-           'energy':energies,'temperature':T_array, 'states':states,'stepSize':stepSizeVec}    
-    for idx_T in range(len(T_array)):
-        T=T_array[idx_T]
+    stepSizeVec=np.zeros([len(xi_array),len(T_array)])
+    xiTStack=np.dstack(np.meshgrid(xi_array,T_array)).reshape(-1,2)
+    stats={'initParams':initParams,'simPerPt':simPerPt,'obsStart':obsStart,'obsDur':obsDur,'xi_array':xi_array,
+           'energy':energies,'temperature':T_array, 'states':states,'stepSize':stepSizeVec,'xiTStack':xiTStack}    
+    for idx in xrange(len(xiTStack)):
+        xi,T=xiTStack[idx]
         initParams['T']=T
+        initParams['H_array']=H_array_gen(initParams['h'],initParams['k'],xi,-1.,T)
         
         charTime=max(min(np.exp(-xi/T),1e5),10)
         stepSize=np.floor(charTime)
@@ -268,6 +270,17 @@ def TE_simulation(fileName,initParams,T_array,simPerPt=1,obsStart=50,obsDur=50,x
                 for idx in np.arange(stepSize):
                     intSp.step()
     pickle.dump(stats,open(fileName,'wb'))
+
+def H_array_gen(h=2,k=2,xi=-0.05,epsilon=-1.,T=1e-2):
+    H_array=np.zeros([h,h,k,k])
+    H_array[0][0]=np.array([[0,eps],
+                           [eps,0]])
+    H_array[0][1]=np.array([[0,eps],
+                           [xi,0]])
+    H_array[1][0]=H_array[0][1].T
+    H_array[1][1]=np.array([[0,xi],
+                           [xi,0]])
+    H_end=np.zeros([h,k])
 
 
 def main(fName,start,dur,hydroFlag=True):
@@ -296,17 +309,7 @@ def main(fName,start,dur,hydroFlag=True):
     # 2nd dim: right domain dim
     # 3rd dim: left domain type, p=0, b=1
     # 4th dim: right domain type
-    xi=-0.05
-    eps=-1
-    H_array=np.zeros([h,h,k,k])
-    H_array[0][0]=np.array([[0,eps],
-                           [eps,0]])
-    H_array[0][1]=np.array([[0,eps],
-                           [xi,0]])
-    H_array[1][0]=H_array[0][1].T
-    H_array[1][1]=np.array([[0,xi],
-                           [xi,0]])
-    H_end=np.zeros([h,k])
+
     
     #ising and lattice gas set-ups.
 #    xi=eps
@@ -326,8 +329,10 @@ def main(fName,start,dur,hydroFlag=True):
 #    
 #    H_array=H_ising
     
+    H_array=None
+    H_end=None
     
-    initParams={'N':N,'m':np.sum(m_array),'k':k,'h':h,'T':T,'m':m,
+    initParams={'N':N,'m':np.sum(m_array),'k':k,'h':h,'T':T,'xi':xi,'m':m,
                 'timestep':timestep,'isCircular':isCircular,
                 'TtoDIsPhysical':False,
                 'isAlt':False,'altProb':0.5,
@@ -342,10 +347,10 @@ def main(fName,start,dur,hydroFlag=True):
 
                 
     #Save result to file
-    T_array=np.logspace(-3,1,num=10)
-#    T_array=np.array([1e-2])
-    
-    TE_simulation(fName,initParams,T_array,simPerPt=1,obsStart=start,obsDur=dur,xi=xi)
+    # T_array=np.logspace(-3,1,num=10)
+    T_array=np.array([1e-2])
+    xi_array=np.logspace(1e-2,1,num=5)
+    TE_simulation(fName,initParams,T_array,xi_array,simPerPt=1,obsStart=start,obsDur=dur,xi=xi)
 
 
 if __name__ == "__main__":
