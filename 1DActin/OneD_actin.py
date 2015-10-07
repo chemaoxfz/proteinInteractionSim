@@ -241,11 +241,11 @@ def update_plot(i):
 
 def TE_simulation(fileName,initParams,T_array,xi_array,simPerPt=1,obsStart=50,obsDur=50,xi=0.05):
     filler = np.frompyfunc(lambda x: list(), 1, 1)
-    energies=np.empty([len(xi_array),len(T_array),simPerPt],dtype=np.object)
-    states=np.empty([len(xi_array),len(T_array),simPerPt],dtype=np.object)
+    energies=np.empty([len(xi_array)*len(T_array),simPerPt],dtype=np.object)
+    states=np.empty([len(xi_array)*len(T_array),simPerPt],dtype=np.object)
     filler(energies,energies)
     filler(states,states)
-    stepSizeVec=np.zeros([len(xi_array),len(T_array)])
+    stepSizeVec=np.zeros([len(xi_array)*len(T_array)])
     xiTStack=np.dstack(np.meshgrid(xi_array,T_array)).reshape(-1,2)
     stats={'initParams':initParams,'simPerPt':simPerPt,'obsStart':obsStart,'obsDur':obsDur,'xi_array':xi_array,
            'energy':energies,'temperature':T_array, 'states':states,'stepSize':stepSizeVec,'xiTStack':xiTStack}    
