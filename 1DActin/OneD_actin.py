@@ -267,7 +267,7 @@ def TE_simulation(fileName,initParams,T_array,xi_array,simPerPt=1,obsStart=50,ob
                 states[idx][repeat].append(intSp.state)
                 stats['states']=states
                 pickle.dump(stats,open(fileName,'wb'))
-                for idx in np.arange(stepSize):
+                for step_idx in xrange(int(stepSize)):
                     intSp.step()
     pickle.dump(stats,open(fileName,'wb'))
 
