@@ -256,15 +256,15 @@ def TE_simulation(fileName,initParams,T_array,xi_array,simPerPt=1,obsStart=50,ob
         
         charTime=max(min(np.exp(-xi/T),1e5),10)
         stepSize=np.floor(charTime)
-        stepSizeVec[idx_T]=stepSize
+        stepSizeVec[idx]=stepSize
         numDataPts=np.int(np.ceil(obsDur/stepSize))
         for repeat in xrange(simPerPt):
             intSp=InteractionSpace(initParams)
             for t in xrange(obsStart): 
                 intSp.step()
             for t in xrange(numDataPts):
-                energies[idx_T][repeat].append(intSp.currentE)
-                states[idx_T][repeat].append(intSp.state)
+                energies[idx][repeat].append(intSp.currentE)
+                states[idx][repeat].append(intSp.state)
                 stats['states']=states
                 pickle.dump(stats,open(fileName,'wb'))
                 for idx in np.arange(stepSize):
