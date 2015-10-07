@@ -266,10 +266,10 @@ def TE_simulation(fileName,initParams,T_array,xi_array,simPerPt=1,obsStart=50,ob
                 energies[idx][repeat].append(intSp.currentE)
                 states[idx][repeat].append(intSp.state)
                 stats['states']=states
-                pickle.dump(stats,open(fileName,'wb'))
                 for step_idx in xrange(int(stepSize)):
                     intSp.step()
-    pickle.dump(stats,open(fileName,'wb'))
+        pickle.dump(stats,open(fileName+str(idx),'wb'))
+#    pickle.dump(stats,open(fileName,'wb'))
 
 def H_array_gen(h=2,k=2,xi=-0.05,eps=-1.,T=1e-2):
     H_array=np.zeros([h,h,k,k])
