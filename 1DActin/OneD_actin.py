@@ -178,20 +178,18 @@ class InteractionSpace:
 
     
     def step(self):
-        for t in xrange(self.params['timestep']):
-            temp=np.random.uniform()
-            if not self.params['TtoDIsPhysical']:
-                self.unphysicalTtoD()
-            
-            self.currentE=self.energy(self.state)
-            changedState=self.change()
-            changedE=self.energy(changedState)
-            
-            if temp <=np.exp((self.currentE-changedE)/float(self.params['T'])):
-                self.state=changedState
-                self.currentE=changedE
-            self.state=self.checkATP(self.state)
-        self.iteration+=1
+        temp=np.random.uniform()
+        if not self.params['TtoDIsPhysical']:
+            self.unphysicalTtoD()
+        
+        self.currentE=self.energy(self.state)
+        changedState=self.change()
+        changedE=self.energy(changedState)
+        
+        if temp <=np.exp((self.currentE-changedE)/float(self.params['T'])):
+            self.state=changedState
+            self.currentE=changedE
+        self.state=self.checkATP(self.state)
 
     def unphysicalTtoD(self):
         #p_h, hydroplysis probability for each ATP-form protein
@@ -231,7 +229,7 @@ def TE_simulation(fileName,initParams,T_array,xi_array,simPerPt=1,obsStart=50,nP
         initParams['T']=T
         initParams['H_array'],initParams['H_end']=H_array_gen(initParams['h'],initParams['k'],xi,-1.,T)
         initParams['H_end']
-        charTime=max(min(np.exp(-xi/T),1e5),10)
+        charTime=max(min(np.exp(-xi/T),3e3),10)
         stepSize=np.floor(charTime)
         stepSizeVec[idx]=stepSize
         for repeat in xrange(simPerPt):
@@ -272,7 +270,6 @@ def main(fName,start,nPts,hydroFlag=True):
     m=20
 #    m=2
     
-    timestep=1
     isCircular=True
     transRotRatio=1.0
     if hydroFlag==False:
@@ -311,7 +308,7 @@ def main(fName,start,nPts,hydroFlag=True):
     xi=0.5
     
     initParams={'N':N,'m':np.sum(m_array),'k':k,'h':h,'T':T,'xi':xi,'m':m,
-                'timestep':timestep,'isCircular':isCircular,
+                'isCircular':isCircular,
                 'TtoDIsPhysical':False,
                 'isAlt':False,'altProb':0.5,
                 'transRotRatio':transRotRatio,
@@ -327,7 +324,7 @@ def main(fName,start,nPts,hydroFlag=True):
     #Save result to file
     # T_array=np.logspace(-3,1,num=10)
     T_array=np.array([1e-2])
-    xi_array=-1*np.logspace(-2,1,num=5)
+    xi_array=-1*np.linspace(1e-2,8e-2,num=4)
     TE_simulation(fName,initParams,T_array,xi_array,simPerPt=1,obsStart=start,nPts=nPts,xi=xi)
 
 
