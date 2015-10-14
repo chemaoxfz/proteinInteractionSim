@@ -327,7 +327,7 @@ def main(fName,start,nPts,hydroFlag=True):
     #Save result to file
     # T_array=np.logspace(-3,1,num=10)
     T_array=np.array([1e-2])
-    xi_array=-1*np.logspace(1e-2,1,num=5)
+    xi_array=-1*np.logspace(-2,1,num=5)
     TE_simulation(fName,initParams,T_array,xi_array,simPerPt=1,obsStart=start,nPts=nPts,xi=xi)
 
 
