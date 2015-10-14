@@ -71,6 +71,9 @@ import pdb
 import pickle
 #import cProfile
 import sys
+np.seterr(all='raise')
+#import warnings
+#warnings.filterwarnings('error')
 
 class InteractionSpace:
     def __init__(self,initParams):
@@ -183,6 +186,7 @@ class InteractionSpace:
             self.currentE=self.energy(self.state)
             changedState=self.change()
             changedE=self.energy(changedState)
+            
             if temp <=np.exp((self.currentE-changedE)/float(self.params['T'])):
                 self.state=changedState
                 self.currentE=changedE
@@ -208,38 +212,8 @@ class InteractionSpace:
                 if (state[0][t]+1)%self.params['N'] not in state[0] and (state[0][t]-1)%self.params['N'] not in state[0]:
                     state[2][t]=0
         return state
-    
-    
-    
-def update_plot(i):
-    global intSp
-    intSp.step()
-    
-    x = np.tile(intSp.state[0],2)+np.concatenate((np.zeros(m),np.ones(m)*deviation))
-    x = np.ravel(np.reshape(x,[2,m]),1)
-    y = np.zeros(2*intSp.params['m'])
-    z = np.vstack((x,y)).transpose()
-    points.set_offsets(z)
-    colors = np.lib.pad(np.repeat(np.reshape(intSp.state[1].flatten()*1/float(k-1),[2*m,1]),2,axis=1),(0,1),'constant',constant_values=(0))
-    points.set_facecolor(colors)
-    
 
-    xcenters=intSp.state[0]+deviation/2
-    ycenters=np.zeros(m)
-    zcenters = np.vstack((xcenters,ycenters)).transpose()
-    centers.set_offsets(zcenters)
-    colorscenters = np.zeros([3,m])
-    colorscenters[2]=intSp.state[2]*1/float(h-1)
-    colorscenters[0]=1-colorscenters[2]
-    colorscenters=colorscenters.T
-    centers.set_facecolor(colorscenters)        
-    
-    
-    time_text.set_text('time=%.1f' % float(intSp.iteration*intSp.params['timestep']))
-    energy_text.set_text('energy=%.1f' % intSp.energy(intSp.state))
-    return points,time_text,energy_text
-
-def TE_simulation(fileName,initParams,T_array,xi_array,simPerPt=1,obsStart=50,obsDur=50,xi=0.05):
+def TE_simulation(fileName,initParams,T_array,xi_array,simPerPt=1,obsStart=50,nPts=50,xi=0.05):
     filler = np.frompyfunc(lambda x: list(), 1, 1)
     energies=np.empty([len(xi_array)*len(T_array),simPerPt],dtype=np.object)
     states=np.empty([len(xi_array)*len(T_array),simPerPt],dtype=np.object)
@@ -247,7 +221,8 @@ def TE_simulation(fileName,initParams,T_array,xi_array,simPerPt=1,obsStart=50,ob
     filler(states,states)
     stepSizeVec=np.zeros([len(xi_array)*len(T_array)])
     xiTStack=np.dstack(np.meshgrid(xi_array,T_array)).reshape(-1,2)
-    stats={'initParams':initParams,'simPerPt':simPerPt,'obsStart':obsStart,'obsDur':obsDur,'xi_array':xi_array,
+    charTime=np.zeros(len(xiTStack))
+    stats={'initParams':initParams,'simPerPt':simPerPt,'obsStart':obsStart,'nPts':nPts,'xi_array':xi_array,
            'energy':energies,'temperature':T_array, 'states':states,'stepSize':stepSizeVec,'xiTStack':xiTStack}    
     for idx in xrange(len(xiTStack)):
         xi,T=xiTStack[idx]
@@ -257,12 +232,11 @@ def TE_simulation(fileName,initParams,T_array,xi_array,simPerPt=1,obsStart=50,ob
         charTime=max(min(np.exp(-xi/T),1e5),10)
         stepSize=np.floor(charTime)
         stepSizeVec[idx]=stepSize
-        numDataPts=np.int(np.ceil(obsDur/stepSize))
         for repeat in xrange(simPerPt):
             intSp=InteractionSpace(initParams)
             for t in xrange(obsStart): 
                 intSp.step()
-            for t in xrange(numDataPts):
+            for t in xrange(nPts):
                 energies[idx][repeat].append(intSp.currentE)
                 states[idx][repeat].append(intSp.state)
                 stats['states']=states
@@ -284,7 +258,7 @@ def H_array_gen(h=2,k=2,xi=-0.05,eps=-1.,T=1e-2):
     return H_array, H_end
 
 
-def main(fName,start,dur,hydroFlag=True):
+def main(fName,start,nPts,hydroFlag=True):
     
     N=100
 #    N=4
@@ -351,17 +325,18 @@ def main(fName,start,dur,hydroFlag=True):
     #Save result to file
     # T_array=np.logspace(-3,1,num=10)
     T_array=np.array([1e-2])
-    xi_array=np.logspace(1e-2,1,num=5)
-    TE_simulation(fName,initParams,T_array,xi_array,simPerPt=1,obsStart=start,obsDur=dur,xi=xi)
+    xi_array=-1*np.logspace(1e-2,1,num=5)
+    TE_simulation(fName,initParams,T_array,xi_array,simPerPt=1,obsStart=start,nPts=nPts,xi=xi)
 
 
 if __name__ == "__main__":
 #    cProfile.run('main()','profile.tmp')
+#    python OneD_actin.py asdf.p 150 100
     fName = sys.argv[1]
     start = int(sys.argv[2])
-    dur = int(sys.argv[3])
-    if len(sys.argv)>3:
+    nPts = int(sys.argv[3])
+    if len(sys.argv)>4:
         hydroFlag=int(sys.argv[4])   
-        main(fName,start,dur,hydroFlag)
+        main(fName,start,nPts,hydroFlag)
         
-    else: main(fName,start,dur)
+    else: main(fName,start,nPts)

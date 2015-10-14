@@ -14,7 +14,7 @@ import pickle
 
 from scipy.special import comb
 
-def plotFromFile(fileName,figName):  
+def plotFromFile(fileName,figName):
     stats=pickle.load(open(fileName,'rb'))
     energies=stats['energy']
     T_array=stats['temperature']
