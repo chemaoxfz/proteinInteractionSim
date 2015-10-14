@@ -215,10 +215,12 @@ class InteractionSpace:
 
 def TE_simulation(fileName,initParams,T_array,xi_array,simPerPt=1,obsStart=50,nPts=50,xi=0.05):
     filler = np.frompyfunc(lambda x: list(), 1, 1)
-    energies=np.empty([len(xi_array)*len(T_array),simPerPt],dtype=np.object)
+#    energies=np.empty([len(xi_array)*len(T_array),simPerPt],dtype=np.object)
     states=np.empty([len(xi_array)*len(T_array),simPerPt],dtype=np.object)
-    filler(energies,energies)
+#    filler(energies,energies)
     filler(states,states)
+
+    energies=np.zeros([len(xi_array)*len(T_array),simPerPt,nPts])
     stepSizeVec=np.zeros([len(xi_array)*len(T_array)])
     xiTStack=np.dstack(np.meshgrid(xi_array,T_array)).reshape(-1,2)
     charTime=np.zeros(len(xiTStack))
@@ -237,7 +239,7 @@ def TE_simulation(fileName,initParams,T_array,xi_array,simPerPt=1,obsStart=50,nP
             for t in xrange(obsStart): 
                 intSp.step()
             for t in xrange(nPts):
-                energies[idx][repeat].append(intSp.currentE)
+                energies[idx][repeat][t]=intSp.currentE
                 states[idx][repeat].append(intSp.state)
                 stats['states']=states
                 for step_idx in xrange(int(stepSize)):
