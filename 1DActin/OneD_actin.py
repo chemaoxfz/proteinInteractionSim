@@ -1,26 +1,5 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thu Aug 27 22:12:16 2015
-
-@author: xfz
-"""
-
-# -*- coding: utf-8 -*-
-"""
-Created on Mon Aug 24 18:10:22 2015
-
-@author: xfz
-"""
-
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Aug 13 07:31:26 2015
-
-@author: xfz
-"""
-
-# -*- coding: utf-8 -*-
-"""
 Created on Wed Aug  5 23:59:47 2015
 
 @author: xfz
@@ -120,30 +99,34 @@ class InteractionSpace:
             E+=self.params['H_end'][state_sorted[2][-1]][state_sorted[1][-1][1]]
         
         return E
-    
+    np.random.rand()
     def change(self):
         '''
         suggests a potential change to state
         return a changed state
         '''
         ratio=self.params['transRotRatio']
-        position_idx=random.choice(xrange(self.params['m']))
+        position_idx=int(np.random.rand*(self.params['m']))
+        noChangeFlag=1
         if self.params['TtoDIsPhysical'] and np.random.rand()<=self.params['probFormChange'] and self.state[2][position_idx]==0:
-                print('WENT THROUGH THE WRONG PLACE!!!!')                
-                changedForm=self.state[2].copy()
-                changedForm[position_idx]=1
-                changedState=(self.state[0],self.state[1],changedForm,self.state[3])
+            changedForm=self.state[2].copy()
+            changedForm[position_idx]=1
+            changedState=(self.state[0],self.state[1],changedForm,self.state[3])
+            noChangeFlag=0
         elif np.random.rand()<=ratio:
+            noChangeFlag=0
             #translation.
             changedPosition=self.state[0].copy()
             if self.params['isAlt']:
                 #Alternative dynamics, where proteins only move if nearby position is open
                 u=np.random.uniform()
                 #Perform change of position
-                if u<= self.params['altProb'] and (self.state[0][position_idx]-1)%self.params['N'] in self.state[0]:
+                if u<= self.params['altProb'] and (self.state[0][position_idx]-1)%self.params['N'] not in self.state[0]:
                     changedPosition[position_idx]=changedPosition[position_idx]-1
-                elif u> self.params['altProb'] and (self.state[0][position_idx]+1)%self.params['N'] in self.state[0]:
+                    
+                elif u> self.params['altProb'] and (self.state[0][position_idx]+1)%self.params['N'] not in self.state[0]:
                     changedPosition[position_idx]=changedPosition[position_idx]+1
+                    
             else:
                 #where jumping through proteins is allowed.
                 # to be more physical, we force proteins to get into empty slots
@@ -310,7 +293,7 @@ def main(fName,start,nPts,hydroFlag=True):
     initParams={'N':N,'m':np.sum(m_array),'k':k,'h':h,'T':T,'xi':xi,'m':m,
                 'isCircular':isCircular,
                 'TtoDIsPhysical':False,
-                'isAlt':False,'altProb':0.5,
+                'isAlt':True,'altProb':0.5,
                 'transRotRatio':transRotRatio,
                 'probFormChange':probFormChange,
                 'm_array':m_array,
@@ -335,7 +318,7 @@ if __name__ == "__main__":
     start = int(sys.argv[2])
     nPts = int(sys.argv[3])
     if len(sys.argv)>4:
-        hydroFlag=int(sys.argv[4])   
+        hydroFlag=int(sys.argv[4])
         main(fName,start,nPts,hydroFlag)
         
     else: main(fName,start,nPts)
