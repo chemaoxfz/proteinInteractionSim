@@ -172,9 +172,9 @@ def TE_simulation(fileName,initParams,T_array,xi_array,eps_array,simPerPt=1,obsS
     pool=Pool()
     chunksize=1
     iterList=[[x,initParams,simPerPt,obsStart,nPts] for x in HParamStack]
-#    for ind, res in enumerate(pool.imap(parFun, iterList),chunksize):
-#        energies[ind-1],states[ind-1],stepSizeVec[ind-1]=res
-    parFun(iterList[0])
+    for ind, res in enumerate(pool.imap(parFun, iterList),chunksize):
+        energies[ind-1],states[ind-1],stepSizeVec[ind-1]=res
+#    parFun(iterList[0])
     stats['energy']=energies
     stats['states']=states
     stats['stepSizeVec']=stepSizeVec
