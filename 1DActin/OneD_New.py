@@ -42,6 +42,7 @@ class InteractionSpace:
                 rIdx=(i+j+1)%self.params['m']
                 a=[state_sorted[0][i],state_sorted[2][i],state_sorted[1][i]]
                 b=[state_sorted[0][rIdx],state_sorted[2][rIdx],state_sorted[1][rIdx]]
+                if (a[0]-b[0])%self.params['N']==0:pdb.set_trace()
                 E+=self.H(a,b)
         return E
         
@@ -66,7 +67,7 @@ class InteractionSpace:
                     changedPosition[position_idx]=(changedPosition[position_idx]-1)%N
                     
                 elif u> self.params['altProb'] and (self.state[0][position_idx]+1)%N not in self.state[0]:
-                    changedPosition[position_idx]=changedPosition[position_idx]+1%N
+                    changedPosition[position_idx]=(changedPosition[position_idx]+1)%N
                     
             else:
                 # where jumping through proteins is allowed.
@@ -102,6 +103,54 @@ class InteractionSpace:
         return changedState,noChangeFlag
 
     
+    def oligoStep(self):
+        
+        def consecutive(state,params):
+            sortIdx=np.argsort(state[0])
+            pos=state[0][sortIdx]
+            endI=np.where(np.diff(pos)!=1)[0]
+            segments=np.split(pos, endI+1)
+            if (segments[0][0]-segments[-1][-1])%params['N']==1:
+                ends=np.concatenate((segments[-1],segments[0])) #[0,1,2] and [N-2,N-1] becomes [-2,-1,0,1,2]
+                segments=[ends,segments[1:-1]]
+                endIdx=endI
+            else: endIdx=np.append(endI,len(pos)-1)
+            return segments,sortIdx,endIdx
+            
+        def filament(state,params,minLen):
+            segments,sortIdx,endIdx=consecutive(state,params)
+            mask=np.array(map(len,segments))>=minLen
+            fila=np.array(segments)[mask]
+            return fila,sortIdx,endIdx,mask  
+        N=self.params['N']
+        m=self.params['m']
+        oligo,sortIdx,endIdx,mask=filament(self.state,self.params,2)
+        if list(oligo):
+#            print(self.state[0])
+            moveBool=np.random.rand(len(oligo))<1./np.array(map(len,oligo))
+            for j in xrange(len(moveBool)):
+                if moveBool[j]:
+#                    if len(oligo)>1: pdb.set_trace()
+                    if np.random.rand()<0.5 and (oligo[j][0]-1)%N not in self.state[0]:
+                        # move to the left.
+                    
+#                        if len(oligo)>1:pdb.set_trace()
+                        changeIdx=np.roll(sortIdx,m-endIdx[j]-1)[-len(oligo[j]):]
+                        self.state[0][changeIdx]=(self.state[0][changeIdx]-1)%N
+                        if self.checkOverlap(): pdb.set_trace()
+                    elif (oligo[j][-1]+1)%N not in self.state[0]:
+#                        if len(oligo)>1:pdb.set_trace()
+                        changeIdx=np.roll(sortIdx,m-endIdx[j]-1)[-len(oligo[j]):]
+                        self.state[0][changeIdx]=(self.state[0][changeIdx]-1)%N
+                        if self.checkOverlap(): pdb.set_trace()
+                    
+                
+#            print(self.state[0])
+    
+    def checkOverlap(self):
+        elt,repeats=np.unique(self.state[0],return_counts=True)
+        return (repeats>1).any()
+    
     def sweep(self):
         for i in xrange(self.params['m']):
             self.step()
@@ -118,6 +167,12 @@ class InteractionSpace:
                 self.state=changedState
                 self.currentE=changedE
             self.state=self.checkATP(self.state)
+        
+        if self.checkOverlap(): pdb.set_trace()
+
+    def overallStep(self):
+        self.sweep()
+        self.oligoStep()
 
     def TtoD(self):
         #p_h, hydroplysis probability for each ATP-form protein
@@ -172,9 +227,9 @@ def TE_simulation(fileName,initParams,T_array,xi_array,eps_array,simPerPt=1,obsS
     pool=Pool()
     chunksize=1
     iterList=[[x,initParams,simPerPt,obsStart,nPts] for x in HParamStack]
-    for ind, res in enumerate(pool.imap(parFun, iterList),chunksize):
-        energies[ind-1],states[ind-1],stepSizeVec[ind-1]=res
-#    parFun(iterList[0])
+#    for ind, res in enumerate(pool.imap(parFun, iterList),chunksize):
+#        energies[ind-1],states[ind-1],stepSizeVec[ind-1]=res
+    parFun(iterList[0])
     stats['energy']=energies
     stats['states']=states
     stats['stepSizeVec']=stepSizeVec
@@ -196,12 +251,12 @@ def parFun(pList):
     for repeat in xrange(simPerPt):
         intSp=InteractionSpace(params,H)
         for t in xrange(obsStart): 
-            intSp.sweep()
+            intSp.overallStep()
         for t in xrange(nPts):
             energy[repeat][t]=intSp.currentE
             state[repeat].append(intSp.state)
             for step_idx in xrange(int(stepSize)):
-                intSp.step()
+                intSp.overallStep()
     return energy,state,stepSize
 
 def H_actin(a,b,eps,xi,T,N,dist_cutoff=1):
@@ -271,7 +326,7 @@ def main(fName,start,nPts,hydroFlag=True):
     initParams={'N':N,'m':np.sum(m_array),'k':k,'h':h,
                 'T':None,'xi':None, 'eps':None,
                 'isCircular':True,
-                'isAlt':False,'altProb':0.5,
+                'isAlt':True,'altProb':0.5,
                 'transRotRatio':1.,
                 'probFormChange':probFormChange,
                 'm_array':m_array,
@@ -282,10 +337,10 @@ def main(fName,start,nPts,hydroFlag=True):
 
                 
     T_array=np.array([1.])
-    xi_array=-1*np.linspace(1,8,num=4)
-    eps_array=-1*np.linspace(2,100,num=10)
-#    xi_array=np.array([-5.])
-#    eps_array=np.array([-100.])
+#    xi_array=-1*np.linspace(1,8,num=4)
+#    eps_array=-1*np.linspace(2,10,num=4)
+    xi_array=np.array([-4.])
+    eps_array=np.array([-8.])
     TE_simulation(fName,initParams,T_array,xi_array,eps_array,simPerPt=1,obsStart=start,nPts=nPts)
 
 

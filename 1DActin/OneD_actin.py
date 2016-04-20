@@ -106,7 +106,7 @@ class InteractionSpace:
         return a changed state
         '''
         ratio=self.params['transRotRatio']
-        position_idx=int(np.random.rand*(self.params['m']))
+        position_idx=int(np.random.rand()*(self.params['m']))
         noChangeFlag=1
         if self.params['TtoDIsPhysical'] and np.random.rand()<=self.params['probFormChange'] and self.state[2][position_idx]==0:
             changedForm=self.state[2].copy()
@@ -225,7 +225,7 @@ def TE_simulation(fileName,initParams,T_array,xi_array,simPerPt=1,obsStart=50,nP
                 stats['states']=states
                 for step_idx in xrange(int(stepSize)):
                     intSp.step()
-        pickle.dump(stats,open(fileName+str(idx),'wb'))
+#        pickle.dump(stats,open(fileName+str(idx),'wb'))
 #    pickle.dump(stats,open(fileName,'wb'))
 
 def H_array_gen(h=2,k=2,xi=-0.05,eps=-1.,T=1e-2):
@@ -307,7 +307,8 @@ def main(fName,start,nPts,hydroFlag=True):
     #Save result to file
     # T_array=np.logspace(-3,1,num=10)
     T_array=np.array([1e-2])
-    xi_array=-1*np.linspace(1e-2,8e-2,num=4)
+#    xi_array=-1*np.linspace(1e-2,8e-2,num=4)
+    xi_array=np.array([-0.05])
     TE_simulation(fName,initParams,T_array,xi_array,simPerPt=1,obsStart=start,nPts=nPts,xi=xi)
 
 
