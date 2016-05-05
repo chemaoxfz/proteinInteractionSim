@@ -41,7 +41,10 @@ class unit:
             
     def hydro(self):
         assert self.form==0
+        assert self.is_subunit!=-1
         self.form=1
+        motherOligo=self.is_subunit
+        motherOligo.ends_rate=motherOligo.ends_rate_calc(motherOligo.subunits)
         
     def diffuse(self,leftRight,units):
         form_oligo=False
@@ -64,8 +67,9 @@ class unit:
         return form_oligo
     
     def energize(self):
-        assert self.form==1
-        self.form=0
+        # as we energize everytime a monomer is created, asserting no longer make sense.
+#        assert self.form==1 
+        self.form=0.
     
 class oligo:
     def __init__(self,subunits,params):
@@ -87,8 +91,10 @@ class oligo:
         rE=self.ends[1].pos
         dic['pos_leftEnd']=lE
         dic['form_leftEnd']=self.ends[0].form
+        dic['form_leftEnd2']=self.ends[0].nb(1,self.subunits).form
         dic['pos_rightEnd']=rE
         dic['form_rightEnd']=self.ends[1].form
+        dic['form_rightEnd2']=self.ends[1].nb(-1,self.subunits).form
         dic['len']=len(self.subunits)
         forms=[x.form for x in self.subunits]
         dic['form_D']=sum(forms)
@@ -186,26 +192,24 @@ class oligo:
         endDomains=[[leftEnd.domain[1],leftEndNb.domain[0]],[rightEndNb.domain[1],rightEnd.domain[0]]]
         endForms=[[leftEnd.form,leftEndNb.form],[rightEndNb.form,rightEnd.form]]
         delE=self.params['H'](endDomains,endForms)
-        
         return np.exp(delE/self.params['T'])
         
         
-def H_actin(endDomainVec,endFormVec,eps,xi):
+def H_actin(endDomainVec,endFormVec,eps=-10.,xi=-1.):
     # a=(pos,form, domain type, protein type)
     # form: 1 is ADP, 0 is ATP.
-    # ORDER MATTERS. (a,b) is an ORDERED pair, meaning protein a is on the left
+    # ORDER MATTERS. (a,b) is an ORDERED pair, meaning protein a is left, b is right.
     #   side of interaction. This is important when distance is calculated.
 
     h=k=2
     H_array=np.zeros([h,h,k,k])
     H_array[0][0]=np.array([[0,eps],
                            [eps,0]])
-    H_array[0][1]=np.array([[0,eps],
-                           [xi,0]])
+    H_array[0][1]=np.array([[0,xi],
+                           [eps,0]])
     H_array[1][0]=H_array[0][1].T
     H_array[1][1]=np.array([[0,xi],
                            [xi,0]])
-
     getE=lambda idx:H_array[endFormVec[idx][0]][endFormVec[idx][1]][endDomainVec[idx][0]][endDomainVec[idx][1]]
     return np.array(map(getE,xrange(len(endDomainVec))))
         
@@ -228,7 +232,7 @@ class InteractionSpace:
         
         
         self.oligos,self.monomers=self.gen_oligos(self.units)
-        self.check_monomer_atp()
+#        self.check_monomer_atp()
         self.al,self.ald=self.alConstruct()    
         self.event=None
         self.current_time=0.
@@ -236,7 +240,7 @@ class InteractionSpace:
 
     def check_monomer_atp(self):
         for x in self.monomers:
-            x.form=0
+            x.form=0.
 
     def gen_oligos(self,units):
         def consecutive(pos):
@@ -366,6 +370,7 @@ class InteractionSpace:
         else:
             #empty, add the end to monomers
             self.monomers=np.insert(self.monomers,0,unitMoving)
+            unitMoving.energize()
         
         if oligo_vanish:
             idx=np.where([oligoEndBreak is x for x in self.oligos])[0]
@@ -374,6 +379,7 @@ class InteractionSpace:
             idx=np.where([unitMoving is not x for x in oligoEndBreak.subunits])[0]
             nonmoving_unit=oligoEndBreak.subunits[idx[0]]
             self.monomers=np.insert(self.monomers,0,nonmoving_unit)
+            nonmoving_unit.energize()
                 
     
     def step(self):
@@ -382,9 +388,14 @@ class InteractionSpace:
 #        if self.check_is_subunit():
 #            pdb.set_trace()
         self.al,self.ald=self.alConstruct()
+#        if not self.check_ends_rate():pdb.set_trace()
+#        if self.current_time>6000: pdb.set_trace()
         self.event=event
         self.time=time
         self.current_time+=time
+
+    def check_ends_rate(self):
+        return all([(x.ends_rate==x.ends_rate_calc(x.subunits)).all() for x in self.oligos])
         
     def check_is_subunit(self):
         tf=[]
@@ -430,26 +441,46 @@ class intSpaceSim():
     def __init__(self,intSpace,params={'mode':'nstep','time':1e3,'nstep':10000}):
         self.intSpace=intSpace
         self.params=params
+    
+    @staticmethod
+    def event_type_func(event_type):
+            if event_type=='diff':
+                return 0
+            elif event_type=='end':
+                return 1
+            elif event_type=='hydro':
+                return 2
 
     def sim(self):
-        trace=pd.DataFrame(columns = ['event','time','current_time'])
-        oligoData=pd.DataFrame(columns = ['hash', 'time', 'pos_leftEnd','pos_rightEnd','len','form_leftEnd','form_rightEnd','form'])
-        monoData=pd.DataFrame(columns = ['pos','form','time'])
-        t=0
-#        while t<self.params['time']:
+        trace=pd.DataFrame(0,index=np.arange(self.params['nstep']),columns = ['event_type','time','current_time'])
+        oligoData=pd.DataFrame(np.nan,index=np.arange(5*self.params['nstep']),columns = ['hash', 'time', 'pos_leftEnd','pos_rightEnd','len','form_leftEnd','form_rightEnd','form_D','form_T','form_leftEnd2','form_rightEnd2'])
+        monoData=pd.DataFrame(0,index=np.arange(self.params['nstep']),columns = ['len','form_D','time'])
+        oligoData_counter=0
+        oligoData.loc[0,:]={'hash':np.nan, 'time':np.nan, 'pos_leftEnd':np.nan,'pos_rightEnd':np.nan,'len':np.nan,'form_leftEnd':np.nan,'form_rightEnd':np.nan,'form_D':np.nan,'form_T':np.nan,'form_leftEnd2':np.nan,'form_rightEn2':np.nan}
+        monoData.loc[0,:]={'len':np.nan,'form_D':np.nan,'time':np.nan}
+        trace.loc[0,:]={'event_type':np.nan,'time':np.nan,'current_time':np.nan}
         if self.params['mode']=='nstep':
             for t in xrange(self.params['nstep']):
                 self.intSpace.step()
+                
                 for oligo in self.intSpace.oligos:
-                    oligoData=oligoData.append(oligo.snapshot(self.intSpace.current_time),ignore_index=True)
-                monoData=monoData.append({'pos':[x.pos for x in self.intSpace.monomers],'form':[x.form for x in self.intSpace.monomers],'time':self.intSpace.current_time},ignore_index=True)
-                trace=trace.append({'event_type':self.intSpace.event.keys()[0],'time':self.intSpace.time,'current_time':self.intSpace.current_time},ignore_index=True)
-
+#                    oligoData=oligoData.append(oligo.snapshot(self.intSpace.current_time),ignore_index=True)
+                    oligoData.loc[oligoData_counter,:]=oligo.snapshot(self.intSpace.current_time)
+                    oligoData_counter+=1
+                mono_form=[x.form for x in self.intSpace.monomers]
+#                monoData=monoData.append({'len':len(self.intSpace.monomers),'form_D':sum(mono_form),'time':self.intSpace.current_time},ignore_index=True)
+                monoData.loc[t,:]={'len':len(self.intSpace.monomers),'form_D':sum(mono_form),'time':self.intSpace.current_time}                
+#                monoData.loc[t,:]=[len(self.intSpace.monomers),sum(mono_form),self.intSpace.current_time]
+#                trace=trace.append({'event_type':event_type_func(self.intSpace.event.keys()[0]),'time':self.intSpace.time,'current_time':self.intSpace.current_time},ignore_index=True)
+#                trace[t,:]=[event_type_func(self.intSpace.event.keys()[0]),self.intSpace.time,self.intSpace.current_time]
+                trace.loc[t,:]={'event_type':intSpaceSim.event_type_func(self.intSpace.event.keys()[0]),'time':self.intSpace.time,'current_time':self.intSpace.current_time}
         else: raise ValueError('mode in params of simulation is not valid')
         
+        oligoData=oligoData.dropna()
         return oligoData,monoData,trace
     
-    def save(self,fN,oligoData):
+    @staticmethod
+    def save(fN,oligoData):
         pd.DataFrame.to_csv(oligoData,fN+'.csv')
     
     def posCalc(self,oligoData):
@@ -484,8 +515,8 @@ class intSpaceSim():
             tEnd=tempDic['time'][tempDic.index[-1]]
             tStart=tempDic['time'][tempDic.index[0]]
             dur=tEnd-tStart
-#            if dur>20000:
-#                continue
+            if dur<100:
+                continue
             if graphParams['truncate']:
                 if (dur<graphParams['cutoffTime']) or len(pos)<graphParams['cutoffNStep']:
                     continue
@@ -508,18 +539,24 @@ class intSpaceSim():
                 rightEndPos=pos_cum+tempDic['len']/2.
                 plt.fill_between(xAxis,leftEndPos,rightEndPos,color='k',alpha=0.3)
                 leftDMask=tempDic['form_leftEnd']==1
-                leftTMask=1-leftDMask
+                leftTMask=np.logical_not(leftDMask)
                 rightDMask=tempDic['form_rightEnd']==1
-                rightTMask=1-rightDMask
+                rightTMask=np.logical_not(rightDMask)
+                leftD2Mask=tempDic['form_leftEnd2']==1
+                leftT2Mask=np.logical_not(leftDMask)
+                rightD2Mask=tempDic['form_rightEnd2']==1
+                rightT2Mask=np.logical_not(rightDMask)
                 color_T='r'
                 color_D='b'
                 markerSize=0.03
                 plt.scatter(xAxis[leftDMask],leftEndPos[leftDMask],color=color_D,s=markerSize,alpha=0.3)
-                print str(sum(leftTMask))+'/'+str(len(leftTMask))
-                print str(sum(rightTMask))+'/'+str(len(rightTMask))
-                plt.scatter(xAxis[leftTMask],leftEndPos[leftTMask],color=color_T,s=markerSize,alpha=1)
+                plt.scatter(xAxis[leftTMask],leftEndPos[leftTMask],color=color_T,s=2*markerSize,alpha=1)
                 plt.scatter(xAxis[rightDMask],rightEndPos[rightDMask],color=color_D,s=markerSize,alpha=0.3)
-                plt.scatter(xAxis[rightTMask],rightEndPos[rightTMask],color=color_T,s=markerSize,alpha=1)
+                plt.scatter(xAxis[rightTMask],rightEndPos[rightTMask],color=color_T,s=2*markerSize,alpha=1)
+                plt.scatter(xAxis[leftD2Mask],leftEndPos[leftD2Mask]+1,color=color_D,s=markerSize,alpha=0.3)
+                plt.scatter(xAxis[leftT2Mask],leftEndPos[leftT2Mask]+1,color=color_T,s=2*markerSize,alpha=1)
+                plt.scatter(xAxis[rightD2Mask],rightEndPos[rightD2Mask]-1,color=color_D,s=markerSize,alpha=0.3)
+                plt.scatter(xAxis[rightT2Mask],rightEndPos[rightT2Mask]-1,color=color_T,s=2*markerSize,alpha=1)
                 ax.set_xlabel('time since born (AU)')
                 ax.set_ylabel('displacement since born')
             elif graphParams['mode']=='not_centered':
@@ -528,24 +565,26 @@ class intSpaceSim():
                 ax.set_ylabel('pos')
             else:
                 raise ValueError('not valid mode option in graphParams')
-        plt.show()
         plt.savefig(fN+'_oligoGraph'+'_'+graphParams['mode']+'.pdf')
             
     
-    def averageCalc(self,oligoData):
+    @staticmethod
+    def averageCalc(oligoData,N_intSpace):
         if isinstance(oligoData,str):
             oligoData=pd.DataFrame.from_csv(oligoData+'.csv')
-        oligoSummary=pd.DataFrame(columns = ['v','v_sd','l','l_sd','t_start','t_end','t_total','form_left','form_right'])
+        oligoSummary=pd.DataFrame(columns = ['v','v_sd','l','l_sd','t_start','t_end','t_total','form_left_T','form_right_T','form_T'])
         oligos_h=np.unique(oligoData['hash'])
         for h in oligos_h:
             tempDic=oligoData.loc[oligoData['hash']==h]
+            if len(tempDic)<2:
+                continue
             t_start=tempDic['time'][tempDic.index[0]]
             t_end=tempDic['time'][tempDic.index[-1]]
             pos=tempDic['pos']
             leng=tempDic['len']
             diff=np.diff(pos)
             pos_diff=[]
-            N=self.intSpace.params['N']
+            N=N_intSpace
             for d in diff:
                 if abs(d)>N-2:
                     d-=np.sign(d)*N
@@ -566,10 +605,11 @@ class intSpaceSim():
             v_sd=np.std(v)
             leng_sd=np.std(leng)
             #form_left is time-weighted prob of left end to be ATP
-            form_left_T=np.sum(tempDic['form_leftEnd'][:-1]*timeDiff)/t_total
-            form_right_T=np.sum(tempDic['form_rightEnd'][:-1]*timeDiff)/t_total
-            form_T = np.sum((tempDic['form_T']/leng)[:-1]*timeDiff)/t_total
-            oligoSummary=oligoSummary.append({'v':v_mean,'l':leng_mean,'v_sd':v_sd,'l_sd':leng_sd,'t_start':t_start,'t_end':t_end,'t_total':t_total,'form_left_T':form_left_T,'form_right_T':form_right_T,'form_T':form_T},ignore_index=True)
+            form_left_D=np.sum(tempDic['form_leftEnd'][:-1]*timeDiff)/t_total
+            form_right_D=np.sum(tempDic['form_rightEnd'][:-1]*timeDiff)/t_total
+            form_D = np.sum((tempDic['form_D']/leng)[:-1]*timeDiff)/t_total
+            if np.isnan(form_D):pdb.set_trace()
+            oligoSummary=oligoSummary.append({'v':v_mean,'l':leng_mean,'v_sd':v_sd,'l_sd':leng_sd,'t_start':t_start,'t_end':t_end,'t_total':t_total,'form_left_D':form_left_D,'form_right_D':form_right_D,'form_D':form_D},ignore_index=True)
         
         return oligoSummary
     
@@ -584,7 +624,8 @@ class intSpaceSim():
         nCol=100
         v_count,v_cenc=np.histogram(v,nCol)
         l_count,l_cenc=np.histogram(leng,nCol)
-        t_count,t_cenc=np.histogram(t,nCol,range=(1,120))
+#        t_count,t_cenc=np.histogram(t,nCol,range=(1,120))
+        t_count,t_cenc=np.histogram(t,nCol)
         
         func_v=lambda idx:(v_cenc[idx]+v_cenc[idx+1])/2.
         func_l=lambda idx:(l_cenc[idx]+l_cenc[idx+1])/2.
@@ -618,24 +659,22 @@ class intSpaceSim():
     @staticmethod
     def monoGraph(fN_mono,fN_trace):
         monoData=pd.DataFrame.from_csv(fN_mono+'.csv')
-        trace=pd.DataFrame.from_csv(fN_trace+'.csv')
         fig=plt.figure()
         ax=fig.add_subplot(111)
-        plt.plot(monoData['time'],map(len,monoData['pos']),'-k',lw=2)
+        plt.plot(monoData['time'],monoData['len'],'-k',lw=1)
         ax.legend(['number of monomers'])
         ax.set_title('Time Trajectory of Number of Monomers')
         ax.set_ylabel('number')
         ax.set_xlabel('time (AU)')
-        pdb.set_trace()
-        plt.savefig(fN+'_graph')
+        plt.savefig(fN+'_monoGraph')
     
     @staticmethod
     def statistics(trace):
         if isinstance(trace,str):
             trace=pd.DataFrame.from_csv(trace+'.csv')
         
-        diff_ratio=sum(trace['event_type']=='diff')/float(len(trace))
-        end_ratio=sum(trace['event_type']=='end')/float(len(trace))
+        diff_ratio=sum(trace['event_type']==intSpaceSim.event_type_func('diff'))/float(len(trace))
+        end_ratio=sum(trace['event_type']==intSpaceSim.event_type_func('end'))/float(len(trace))
         hydro_ratio=1-diff_ratio-end_ratio
         print('diff:'+str(diff_ratio)+', end:'+str(end_ratio)+', hydro:'+str(hydro_ratio))
 #        pdb.set_trace()
@@ -663,7 +702,7 @@ def createSim(fN,NN=10000,xi=-1.,rateHydro=1e-3):
                 'm_array':m_array,
                 'dist_cutoff':2.,
                 'D_mono':1.,
-                'H':lambda x,y:H_actin(x,y,xi,eps)}
+                'H':lambda x,y:H_actin(x,y,eps=eps,xi=xi)}
 
 
     position=np.random.choice(range(N),m,replace=False)
@@ -695,22 +734,23 @@ def createSim(fN,NN=10000,xi=-1.,rateHydro=1e-3):
 
     oligoData,monoData,trace=bb.sim()
     oligoData=bb.posCalc(oligoData)
-    bb.save(fN+'_oligo',oligoData)
-    bb.save(fN+'_mono',monoData)
-    bb.save(fN+'_trace',trace)
-    oligoSummary=bb.averageCalc(oligoData)
-    bb.save(fN+'_summary',oligoSummary)
+    intSpaceSim.save(fN+'_oligo',oligoData)
+    intSpaceSim.save(fN+'_mono',monoData)
+    intSpaceSim.save(fN+'_trace',trace)
+    oligoSummary=intSpaceSim.averageCalc(oligoData,bb.intSpace.params['N'])
+    intSpaceSim.save(fN+'_summary',oligoSummary)
     return fN
 
 
 if __name__ == "__main__":
 
-    NN=10000
+    NN=40000
 #    fN='N50_10000'
 #    fN='N50_e5'
-    fN='N50_m30_e4_he-3'
+    fN='N50_m30_e5_he-2'
+#    fN='N50_m30_e5_he-3'
 #    fN='test'
-#    createSim(fN,NN=NN,xi=-1.,rateHydro=1e-3)
+    createSim(fN,NN=NN,xi=-1.,rateHydro=1e-2)
     
 #    niter=10
     
@@ -718,6 +758,8 @@ if __name__ == "__main__":
 #        fNi=fN+'_'+str(i)
 #        createSim(fN,NN=NN)
     
+#    aa=intSpaceSim.averageCalc(fN+'_oligo',50)
+#    intSpaceSim.save(fN+'_summary',aa)
     intSpaceSim.oligoGraph(50,fN,fN+'_oligo')
     intSpaceSim.averageGraph(fN+'_summary')
     intSpaceSim.monoGraph(fN+'_mono',fN+'_trace')
