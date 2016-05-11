@@ -565,7 +565,7 @@ class intSpaceSim():
                 ax.set_ylabel('pos')
             else:
                 raise ValueError('not valid mode option in graphParams')
-        plt.savefig(fN+'_oligoGraph'+'_'+graphParams['mode']+'.pdf')
+        plt.savefig(fN+'_oligoGraph'+'_'+graphParams['mode']+'.png')
             
     
     @staticmethod
@@ -672,11 +672,11 @@ class intSpaceSim():
     def statistics(trace):
         if isinstance(trace,str):
             trace=pd.DataFrame.from_csv(trace+'.csv')
-        
-        diff_ratio=sum(trace['event_type']==intSpaceSim.event_type_func('diff'))/float(len(trace))
-        end_ratio=sum(trace['event_type']==intSpaceSim.event_type_func('end'))/float(len(trace))
+        total_num=float(len(trace))
+        diff_ratio=sum(trace['event_type']==intSpaceSim.event_type_func('diff'))
+        end_ratio=sum(trace['event_type']==intSpaceSim.event_type_func('end'))
         hydro_ratio=1-diff_ratio-end_ratio
-        print('diff:'+str(diff_ratio)+', end:'+str(end_ratio)+', hydro:'+str(hydro_ratio))
+        print('diff:'+str(diff_ratio)+'/'+str(total_num)+', end:'+str(end_ratio)+'/'+str(total_num)+', hydro:'+str(hydro_ratio)+'/'+str(total_num))
 #        pdb.set_trace()
     
     @staticmethod
@@ -743,8 +743,8 @@ def createSim(fN,NN=10000,xi=-1.,rateHydro=1e-3):
 
 
 if __name__ == "__main__":
-
-    NN=40000
+    asdf
+    NN=10000
 #    fN='N50_10000'
 #    fN='N50_e5'
     fN='N50_m30_e5_he-2'
