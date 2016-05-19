@@ -11,6 +11,8 @@ Created on Wed Oct 28 21:17:18 2015
 
 @author: xfz
 """
+import matplotlib
+matplotlib.use('Agg')
 import numpy as np
 import pdb
 import pickle
