@@ -12,12 +12,10 @@ Created on Wed Oct 28 21:17:18 2015
 @author: xfz
 """
 import numpy as np
-import random
 import pdb
 import pickle
 #import cProfile
 import sys
-from itertools import product
 from multiprocessing import Pool
 import pandas as pd
 import time
@@ -219,7 +217,7 @@ class InteractionSpace:
         params=init['params']
         self.params=params        
         if init['mode']=='unit':
-            self.units=units
+            self.units=init['units']
         else:
             pos=init['pos']
             domain=init['domain']
@@ -409,15 +407,15 @@ class InteractionSpace:
         return not all(tf)
                 
     def disp_pos(self):
-        pos=np.sort([x.pos for x in aa.units])
+        pos=np.sort([x.pos for x in self.units])
         return pos
         
     def disp_mono(self):
-        mono_pos=np.sort([x.pos for x in aa.monomers])
+        mono_pos=np.sort([x.pos for x in self.monomers])
         return mono_pos
         
     def disp_oligo(self):
-        oligo_pos=[np.sort([x.pos for x in y.subunits]) for y in aa.oligos]
+        oligo_pos=[np.sort([x.pos for x in y.subunits]) for y in self.oligos]
         return oligo_pos
     
     def disp(self):
@@ -515,21 +513,21 @@ class intSpaceSim():
             tEnd=tempDic['time'][tempDic.index[-1]]
             tStart=tempDic['time'][tempDic.index[0]]
             dur=tEnd-tStart
-            if dur<100:
-                continue
             if graphParams['truncate']:
                 if (dur<graphParams['cutoffTime']) or len(pos)<graphParams['cutoffNStep']:
                     continue
             diff=np.diff(pos)
             pos_diff=[]
             
-#            N=self.intSpace.params['N']
-            
+            # pos_diff is the difference in average position of the oligo between time steps
+            # here the circular space is linearized for displacement calculations.
             for d in diff:
                 if abs(d)>N-2:
+                    # it goes from one side of circular boundary to another side.
                     d-=np.sign(d)*N
                 pos_diff.append(d)
-
+            
+            #pos_cum is cumulated displacement from position of creation
             pos_cum=np.zeros(len(pos_diff)+1)
             pos_cum[1:]=np.cumsum(pos_diff)
             if graphParams['mode']=='centered':
@@ -548,7 +546,7 @@ class intSpaceSim():
                 rightT2Mask=np.logical_not(rightDMask)
                 color_T='r'
                 color_D='b'
-                markerSize=0.03
+                markerSize=0.6
                 plt.scatter(xAxis[leftDMask],leftEndPos[leftDMask],color=color_D,s=markerSize,alpha=0.3)
                 plt.scatter(xAxis[leftTMask],leftEndPos[leftTMask],color=color_T,s=2*markerSize,alpha=1)
                 plt.scatter(xAxis[rightDMask],rightEndPos[rightDMask],color=color_D,s=markerSize,alpha=0.3)
@@ -565,15 +563,41 @@ class intSpaceSim():
                 ax.set_ylabel('pos')
             else:
                 raise ValueError('not valid mode option in graphParams')
-        plt.savefig(fN+'_oligoGraph'+'_'+graphParams['mode']+'.png')
+        plt.savefig(fN+'_oligoGraph'+'_'+graphParams['mode']+'.pdf')
+    
+    @staticmethod
+    def runningCalc(fN,summaryData,npts=1000):
+        if isinstance(summaryData,str):
+            summaryData=pd.DataFrame.from_csv(summaryData+'.csv')
+        running={'v':[],'vl':[],'l':[],'v(l)':[]}
+        times=np.linspace(10.,max(summaryData['t_end']),npts)
+        for t in times:
+            selected=[(v,min(t-t_start,t_total),l) for v,t_start,t_total,l in zip(summaryData['v'],summaryData['t_start'],summaryData['t_total'],summaryData['l']) if t>t_start]
+            if len(selected)==0:
+                continue
+            running['v'].append(np.sum([x[0]*x[1] for x in selected])/t)
+            lt=np.sum([x[1]*x[2] for x in selected])
+            running['l'].append(lt/t)
+            vl=np.sum([x[0]*x[1]*x[2] for x in selected])
+            running['vl'].append(vl/t)
+            running['v(l)'].append(vl/lt) # length weighted velocity time-course
+
+        for label in ['v','vl','l','v(l)']:
+            fig=plt.figure()
+            ax=fig.add_subplot(111)
+            ax.plot(times,running[label],'-b',lw=2,label=label)
+            ax.set_xlabel('time')
+            ax.set_ylabel(label)
+            plt.savefig(fN+'_running_'+label+'.pdf')
             
     
     @staticmethod
     def averageCalc(oligoData,N_intSpace):
         if isinstance(oligoData,str):
             oligoData=pd.DataFrame.from_csv(oligoData+'.csv')
-        oligoSummary=pd.DataFrame(columns = ['v','v_sd','l','l_sd','t_start','t_end','t_total','form_left_T','form_right_T','form_T'])
+        
         oligos_h=np.unique(oligoData['hash'])
+        oligoSummary=pd.DataFrame(index=oligos_h,columns = ['v','v_sd','l','l_sd','t_start','t_end','t_total','form_left_D','form_right_D','form_D','form_left_D_2','form_right_D_2'])
         for h in oligos_h:
             tempDic=oligoData.loc[oligoData['hash']==h]
             if len(tempDic)<2:
@@ -607,10 +631,10 @@ class intSpaceSim():
             #form_left is time-weighted prob of left end to be ATP
             form_left_D=np.sum(tempDic['form_leftEnd'][:-1]*timeDiff)/t_total
             form_right_D=np.sum(tempDic['form_rightEnd'][:-1]*timeDiff)/t_total
+            form_left_D_2=np.sum(tempDic['form_leftEnd2'][:-1]*timeDiff)/t_total
+            form_right_D_2=np.sum(tempDic['form_rightEnd2'][:-1]*timeDiff)/t_total
             form_D = np.sum((tempDic['form_D']/leng)[:-1]*timeDiff)/t_total
-            if np.isnan(form_D):pdb.set_trace()
-            oligoSummary=oligoSummary.append({'v':v_mean,'l':leng_mean,'v_sd':v_sd,'l_sd':leng_sd,'t_start':t_start,'t_end':t_end,'t_total':t_total,'form_left_D':form_left_D,'form_right_D':form_right_D,'form_D':form_D},ignore_index=True)
-        
+            oligoSummary.loc[h]={'v':v_mean,'l':leng_mean,'v_sd':v_sd,'l_sd':leng_sd,'t_start':t_start,'t_end':t_end,'t_total':t_total,'form_left_D':form_left_D,'form_right_D':form_right_D,'form_D':form_D,'form_left_D_2':form_left_D_2,'form_right_D_2':form_right_D_2}
         return oligoSummary
     
     @staticmethod
@@ -662,11 +686,15 @@ class intSpaceSim():
         fig=plt.figure()
         ax=fig.add_subplot(111)
         plt.plot(monoData['time'],monoData['len'],'-k',lw=1)
-        ax.legend(['number of monomers'])
+        ll=np.array(monoData['len'])[:-1]
+        runningMean=np.cumsum(ll*np.diff(monoData['time']))/monoData['time'][1:]
+        plt.plot(monoData['time'][1:],runningMean,'-r',lw=2)
+        ax.legend(['number of monomers','running average'])
         ax.set_title('Time Trajectory of Number of Monomers')
         ax.set_ylabel('number')
         ax.set_xlabel('time (AU)')
-        plt.savefig(fN+'_monoGraph')
+        ax.set_ylim([0.,10.])
+        plt.savefig(fN+'_monoGraph.pdf')
     
     @staticmethod
     def statistics(trace):
@@ -675,7 +703,7 @@ class intSpaceSim():
         total_num=float(len(trace))
         diff_ratio=sum(trace['event_type']==intSpaceSim.event_type_func('diff'))
         end_ratio=sum(trace['event_type']==intSpaceSim.event_type_func('end'))
-        hydro_ratio=1-diff_ratio-end_ratio
+        hydro_ratio=len(trace)-diff_ratio-end_ratio
         print('diff:'+str(diff_ratio)+'/'+str(total_num)+', end:'+str(end_ratio)+'/'+str(total_num)+', hydro:'+str(hydro_ratio)+'/'+str(total_num))
 #        pdb.set_trace()
     
@@ -683,15 +711,30 @@ class intSpaceSim():
     def timeWindowVelocity(oligoSummary):
         if isinstance(oligoSummary,str):
             oligoSummary=pd.DataFrame.from_csv(oligoSummary+'.csv')
-        
+    
+    @staticmethod
+    def treadmillingFilaments(oligoSummary):
+        if isinstance(oligoSummary,str):
+            oligoSummary=pd.DataFrame.from_csv(oligoSummary+'.csv')
+        threshold=0.2
+        dur_thr=100.
+        left_mask=oligoSummary['form_left_D']>1-threshold
+        right_mask=oligoSummary['form_right_D']<threshold
+        dur_mask=oligoSummary['t_total']>dur_thr
+        pdb.set_trace()
+        all_mask=dur_mask & left_mask & right_mask
+        temp=oligoSummary[all_mask]
+        v_tread=np.sum(temp['v']*temp['l']*temp['t_total'])/np.sum(temp['l']*temp['t_total'])
+        print v_tread
+        return v_tread
 
-def createSim(fN,NN=10000,xi=-1.,rateHydro=1e-3):
-    N=50
+def createSim(fN,NN=10000,xi=-1.,rateHydro=1e-3,N=50,m=30,eps=-100.):
+    N=N
     k=2
     h=2
-    m_array=np.array([[0,30],[0,0]])
+    m_array=np.array([[0,m],[0,0]])
 #    xi=-0.1
-    eps=-100. # to make it essentially impossible
+    eps=eps # to make it essentially impossible
 #    rateHydro=1e-1
     m=np.sum(m_array)
     params={'N':N,'m':m,'k':k,'h':h,
@@ -743,24 +786,21 @@ def createSim(fN,NN=10000,xi=-1.,rateHydro=1e-3):
 
 
 if __name__ == "__main__":
-    asdf
-    NN=10000
-#    fN='N50_10000'
-#    fN='N50_e5'
-    fN='N50_m30_e5_he-2'
-#    fN='N50_m30_e5_he-3'
-#    fN='test'
-    createSim(fN,NN=NN,xi=-1.,rateHydro=1e-2)
+    N=50
+    m=30
+    NN=100000
+    xi=-1.
+    rateHydro=1e-1
     
-#    niter=10
-    
-#    for i in xrange(niter):
-#        fNi=fN+'_'+str(i)
-#        createSim(fN,NN=NN)
-    
-#    aa=intSpaceSim.averageCalc(fN+'_oligo',50)
-#    intSpaceSim.save(fN+'_summary',aa)
-    intSpaceSim.oligoGraph(50,fN,fN+'_oligo')
-    intSpaceSim.averageGraph(fN+'_summary')
-    intSpaceSim.monoGraph(fN+'_mono',fN+'_trace')
-    intSpaceSim.statistics(fN+'_trace')
+    fN='N-'+str(N)+'_m-'+str(m)+'_NN-'+str(NN)+'_xi-'+str(xi)+'_rh-'+str(rateHydro)
+    createSim(fN,NN=NN,xi=xi,rateHydro=rateHydro)
+    intSpaceSim.runningCalc(fN,fN+'_summary')
+#    intSpaceSim.oligoGraph(N,fN,fN+'_oligo',graphParams={'truncate':True,'cutoffTime':20.,'cutoffNStep':100,'mode':'centered'})
+#    intSpaceSim.averageGraph(fN+'_summary')
+#    intSpaceSim.monoGraph(fN+'_mono',fN+'_trace')
+#    intSpaceSim.statistics(fN+'_trace')
+#    v_tread=[]
+#    for i in xrange(10):
+#        createSim(fN,NN=NN,xi=-1.,rateHydro=1e-2)
+#        v_tread.append(intSpaceSim.treadmillingFilaments(fN+'_summary'))
+#    pdb.set_trace()
