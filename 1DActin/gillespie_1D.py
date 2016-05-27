@@ -16,7 +16,6 @@ matplotlib.use('Agg')
 import numpy as np
 import pdb
 import pickle
-#import cProfile
 import sys
 from multiprocessing import Pool
 import pandas as pd
@@ -104,7 +103,12 @@ class oligo:
         dic['form_T']=dic['len']-dic['form_D']
         dic['time']=time
         dic['hash']=self.hash
-        return dic
+        un=self.ends[1]
+        form=[]
+        for i in xrange(len(self.subunits)):
+            form.append(un.form)
+            un=un.nb(-1,self.subunits)
+        return dic,form
         
     def history_entry(self):
         self.history=np.append(self.history,self.snapshot)
@@ -459,7 +463,7 @@ class InteractionSpace:
 
 
 class intSpaceSim():
-    def __init__(self,intSpace,params={'mode':'nstep','time':1e3,'nstep':10000}):
+    def __init__(self,intSpace,params={'nstep':10000}):
         self.intSpace=intSpace
         self.params=params
     
@@ -473,34 +477,23 @@ class intSpaceSim():
                 return 2
 
     def sim(self):
-        trace=pd.DataFrame(0,index=np.arange(self.params['nstep']),columns = ['event_type','time','current_time'])
-        oligoData=pd.DataFrame(np.nan,index=np.arange(5*self.params['nstep']),columns = ['hash', 'time', 'pos_leftEnd','pos_rightEnd','len','form_leftEnd','form_rightEnd','form_D','form_T','form_leftEnd2','form_rightEnd2'])
-        monoData=pd.DataFrame(0,index=np.arange(self.params['nstep']),columns = ['len','form_D','time'])
-#        oligoData.loc[0,:]={'hash':np.nan, 'time':np.nan, 'pos_leftEnd':np.nan,'pos_rightEnd':np.nan,'len':np.nan,'form_leftEnd':np.nan,'form_rightEnd':np.nan,'form_D':np.nan,'form_T':np.nan,'form_leftEnd2':np.nan,'form_rightEn2':np.nan}
-#        monoData.loc[0,:]={'len':np.nan,'form_D':np.nan,'time':np.nan}
-#        trace.loc[0,:]={'event_type':np.nan,'time':np.nan,'current_time':np.nan}
         oligoData=[]
         monoData=[]
         trace=[]
-        if self.params['mode']=='nstep':
-            for t in xrange(self.params['nstep']):
-                self.intSpace.step()
-                
-                for oligo in self.intSpace.oligos:
-#                    oligoData=oligoData.append(oligo.snapshot(self.intSpace.current_time),ignore_index=True)
-#                    oligoData.loc[oligoData_counter]=oligo.snapshot(self.intSpace.current_time)
-                    oligoData.append(oligo.snapshot(self.intSpace.current_time))
-                mono_form=[x.form for x in self.intSpace.monomers]
-#                monoData.loc[t]=               
-                monoData.append({'len':len(self.intSpace.monomers),'form_D':sum(mono_form),'time':self.intSpace.current_time})
-#                trace.loc[t]={'event_type':intSpaceSim.event_type_func(self.intSpace.event.keys()[0]),'time':self.intSpace.time,'current_time':self.intSpace.current_time}
-                trace.append({'event_type':intSpaceSim.event_type_func(self.intSpace.event.keys()[0]),'event_code':self.intSpace.event_code,'time':self.intSpace.time,'current_time':self.intSpace.current_time})
-        else: raise ValueError('mode in params of simulation is not valid')
+        form=[]
+        for t in xrange(self.params['nstep']):
+            self.intSpace.step()
+            for oligo in self.intSpace.oligos:
+                sp,fm=oligo.snapshot(self.intSpace.current_time)
+                oligoData.append(sp)
+                form.append(fm)
+            mono_form=[x.form for x in self.intSpace.monomers]
+            monoData.append({'len':len(self.intSpace.monomers),'form_D':sum(mono_form),'time':self.intSpace.current_time})
+            trace.append({'event_type':intSpaceSim.event_type_func(self.intSpace.event.keys()[0]),'event_code':self.intSpace.event_code,'time':self.intSpace.time,'current_time':self.intSpace.current_time})
         oligoData=pd.DataFrame(oligoData)
         monoData=pd.DataFrame(monoData)
         trace=pd.DataFrame(trace)
-#        oligoData=oligoData.dropna()
-        return oligoData,monoData,trace
+        return oligoData,monoData,trace,form
     
     @staticmethod
     def save(fN,oligoData):
@@ -605,6 +598,7 @@ class intSpaceSim():
         t_init=t
         times=np.linspace(t_init,max(summaryData['t_end']),npts)
         for t in times:
+            # one issue, t is not necessarily all time, as multiple filaments may coexist. i.e. sum(t for each filament till time t)>t
             selected=[(v,min(t-t_start,t_total),l,adp,l_adp,r_adp,l2_adp,r2_adp) for v,t_start,t_total,l,adp,l_adp,r_adp,l2_adp,r2_adp in zip(summaryData['v'],summaryData['t_start'],summaryData['t_total'],summaryData['l'],summaryData['form_D'],summaryData['form_left_D'],summaryData['form_left_D_2'],summaryData['form_right_D'],summaryData['form_right_D_2']) if t>t_start]
             running['v'].append(np.sum([x[0]*x[1] for x in selected])/t)
             lt=np.sum([x[1]*x[2] for x in selected])
@@ -655,22 +649,86 @@ class intSpaceSim():
             ax.set_ylabel(label)
             plt.savefig(fN+'_trrun_'+label+'.pdf')
                 
+    @staticmethod
+    def oneValCalc(summary,trace,m,time_cutoff='half'):
+        if isinstance(trace,str):
+            trace=pd.DataFrame.from_csv(trace+'.csv')
         
-            
+        
+        t_end=trace['current_time'][trace.index[-1]]
+        if isinstance(time_cutoff,str):
+            if time_cutoff=='half':
+                time_cutoff=t_end/2
+            else:
+                raise ValueError('Invalid time_cutoff option')
+
+        t_total=t_end-time_cutoff
+        tr={'kl_on':0.,'kr_on':0.,'kl_off':0.,'kr_off':0.}
+        diff=intSpaceSim.event_type_func('diff')
+        end=intSpaceSim.event_type_func('end')
+        dics={(diff,3):'kl_on',(diff,6):'kl_on',(end,2):'kl_on',(diff,2):'kr_on',(diff,5):'kr_on',(end,5):'kr_on',(end,0):'kl_off',(end,1):'kl_off',(end,2):'kl_off',(end,3):'kr_off',(end,4):'kr_off',(end,5):'kr_off'}
+        trace_truncated=trace.loc[trace['current_time']>time_cutoff]
+        for et,ec in zip(trace_truncated['event_type'],trace_truncated['event_code']):
+            try:
+                tr[dics[(et,ec)]]+=1
+            except KeyError:
+                continue
+        for key in tr.keys():
+            tr[key]=tr[key]/t_total
+        
+        
+        if isinstance(summary,str):
+            summary=pd.DataFrame.from_csv(summary+'.csv')
+        
+#        su={'v(lt)':0.,'v(t)':0.,'atp':0.,'l_atp':0.,'r_atp':0.,'l2_atp':0.,'r2_atp':0.}
+        su={}
+        v,t,l,adp,l_adp,r_adp,l2_adp,r2_adp = [summary[key] for key in ['v','t_total','l','form_D','form_left_D','form_left_D_2','form_right_D','form_right_D_2']]
+
+        t_total=np.sum(t)
+        lt=np.sum(t*l)
+        su['v(t)']=np.sum(v*t)/t_total
+        su['v(lt)']=np.sum([v*t*l])/t_total
+        su['l']=lt/t_total
+        su['atp']=np.sum(t*(1-adp)*l)/lt
+        su['l_atp'],su['l2_atp'],su['r_atp'],su['r2_atp']=[np.sum((1-x)*t)/t_total for x in [l_adp,r_adp,l2_adp,r2_adp]]
+
+        # calculate form and length. form is atp probability
+        form_keys=['form_'+str(i+1) for i in xrange(m)]
+        l_keys=['l_'+str(i+1) for i in xrange(m)]
+        l_time_total=dict(zip(l_keys,[0.]*m))
+        l_prob=l_time_total.copy()
+        form_time_total=dict(zip(form_keys,[0.]*m))
+        form_prob=form_time_total.copy()
+
+        for lkey in l_keys:
+            l_time_total[lkey]=np.sum(summary[lkey])
+            l_prob[lkey]=l_time_total[lkey]/t_total
+        i=0
+        for fkey in form_keys:
+            form_time_total[fkey]=np.sum(summary[fkey])
+            form_prob[fkey]=1-form_time_total[fkey]/max(np.sum([l_time_total[x] for x in l_keys[i:]]),1e-7)
+            i+=1
+        
+        su.update(form_prob)
+        su.update(l_prob)
+        su.update(tr)
+        return pd.DataFrame(su,index=[0])
     
     @staticmethod
-    def averageCalc(oligoData,N_intSpace,take_latter_half=True):
+    def averageCalc(oligoData,form,N_intSpace,m_intSpace,take_latter_half=True):
         if isinstance(oligoData,str):
             oligoData=pd.DataFrame.from_csv(oligoData+'.csv')
         
         if take_latter_half:
             l=len(oligoData)
             data=oligoData.loc[oligoData.index[l/2:]]
+#            form=form[l/2:]
         oligos_h=np.unique(data['hash'])
-#        oligoSummary=pd.DataFrame(index=oligos_h,columns = ['v','v_sd','l','l_sd','t_start','t_end','t_total','form_left_D','form_right_D','form_D','form_left_D_2','form_right_D_2'])
         oligoSummary=[]
+        
         for h in oligos_h:
             tempDic=oligoData.loc[oligoData['hash']==h]
+
             if len(tempDic)<2:
                 continue
             t_start=tempDic['time'][tempDic.index[0]]
@@ -694,18 +752,45 @@ class intSpaceSim():
             v=pos_diff/timeDiff
             v_mean=pos_cum[-1]/t_total
             leng_mean=np.sum(leng[:-1]*timeDiff)/t_total
-            if t_total<1e-5:pdb.set_trace()
+                
 #            if leng_mean<5: # get rid of too short oligos
 #                continue
-            v_sd=np.std(v)
-            leng_sd=np.std(leng)
+#            v_sd=np.std(v)
+#            leng_sd=np.std(leng)
+            
             #form_left is time-weighted prob of left end to be ATP
             form_left_D=np.sum(tempDic['form_leftEnd'][:-1]*timeDiff)/t_total
             form_right_D=np.sum(tempDic['form_rightEnd'][:-1]*timeDiff)/t_total
             form_left_D_2=np.sum(tempDic['form_leftEnd2'][:-1]*timeDiff)/t_total
             form_right_D_2=np.sum(tempDic['form_rightEnd2'][:-1]*timeDiff)/t_total
             form_D = np.sum((tempDic['form_D']/leng)[:-1]*timeDiff)/t_total
-            oligoSummary.append({'v':v_mean,'l':leng_mean,'v_sd':v_sd,'l_sd':leng_sd,'t_start':t_start,'t_end':t_end,'t_total':t_total,'form_left_D':form_left_D,'form_right_D':form_right_D,'form_D':form_D,'form_left_D_2':form_left_D_2,'form_right_D_2':form_right_D_2})
+            
+
+            # form prob calculation
+            form_time=np.zeros(m_intSpace)
+            form_oligo=[]
+#            form_time=[]
+            for i in tempDic.index[:-1]:
+                temp=len(form[i])
+                form_oligo.append(form[i]+[0]*(m_intSpace-temp))
+#                form_time.append([1]*temp+[0]*(m_intSpace-temp))
+#            form_time=np.sum((np.array(form_time).T*timeDiff),axis=1)+1e-7
+#            form_prob=np.sum((np.array(form_oligo).T*timeDiff),axis=1)/form_time
+            form_time=np.sum((np.array(form_oligo).T*timeDiff),axis=1) #amount of time spend in ADP for each position from right end. Divide by cumsum(length time) to get probability
+            form_dic=dict(zip(['form_'+str(i+1) for i in xrange(m_intSpace)],form_time))
+
+            # calculate length distribution
+            l_dic=dict(zip(['l_'+str(i+1) for i in xrange(m_intSpace)],[0]*m_intSpace)) # amount of time spent in each length. Divide by total time to get probability
+            for ln,t in zip(leng,timeDiff):
+                l_dic['l_'+str(ln)]+=t
+            
+            dic={'v':v_mean,'l':leng_mean,'t_start':t_start,'t_end':t_end,'t_total':t_total,'form_left_D':form_left_D,'form_right_D':form_right_D,'form_D':form_D,'form_left_D_2':form_left_D_2,'form_right_D_2':form_right_D_2}
+            dic.update(form_dic)
+            dic.update(l_dic)
+            oligoSummary.append(dic)
+            
+            
+            
         oligoSummary=pd.DataFrame(oligoSummary)
         return oligoSummary
     
@@ -753,8 +838,8 @@ class intSpaceSim():
         plt.savefig(fN+'_graph.pdf')
     
     @staticmethod
-    def monoGraph(fN_mono,fN_trace):
-        monoData=pd.DataFrame.from_csv(fN_mono+'.csv')
+    def monoGraph(fN):
+        monoData=pd.DataFrame.from_csv(fN+'.csv')
         fig=plt.figure()
         ax=fig.add_subplot(111)
         plt.plot(monoData['time'],monoData['len'],'-k',lw=1)
@@ -775,15 +860,9 @@ class intSpaceSim():
         total_num=float(len(trace))
         diff_ratio=sum(trace['event_type']==intSpaceSim.event_type_func('diff'))
         end_ratio=sum(trace['event_type']==intSpaceSim.event_type_func('end'))
-        hydro_ratio=len(trace)-diff_ratio-end_ratio
+        hydro_ratio=total_num-diff_ratio-end_ratio
         print('diff:'+str(diff_ratio)+'/'+str(total_num)+', end:'+str(end_ratio)+'/'+str(total_num)+', hydro:'+str(hydro_ratio)+'/'+str(total_num))
-#        pdb.set_trace()
-    
-    @staticmethod
-    def timeWindowVelocity(oligoSummary):
-        if isinstance(oligoSummary,str):
-            oligoSummary=pd.DataFrame.from_csv(oligoSummary+'.csv')
-    
+        
     @staticmethod
     def treadmillingFilaments(oligoSummary):
         if isinstance(oligoSummary,str):
@@ -799,85 +878,194 @@ class intSpaceSim():
         v_tread=np.sum(temp['v']*temp['l']*temp['t_total'])/np.sum(temp['l']*temp['t_total'])
         print v_tread
         return v_tread
+        
+        
 
-def createSim(fN,NN=10000,xi=-1.,rateHydro=1e-3,N=50,m=30,eps=-100.):
-    N=N
-    k=2
-    h=2
-    m_array=np.array([[0,m],[0,0]])
-#    xi=-0.1
-    eps=eps # to make it essentially impossible
-#    rateHydro=1e-1
-    m=np.sum(m_array)
-    params={'N':N,'m':m,'k':k,'h':h,
-                'T':1.,'xi':None,'eps':None,
-                'isCircular':True,
-                'transRotRatio':1.,
-                'rateHydro':rateHydro,
-                'm_array':m_array,
-                'dist_cutoff':2.,
-                'D_mono':1.,
-                'H':lambda x,y:H_actin(x,y,eps=eps,xi=xi)}
-
-
-    position=np.random.choice(range(N),m,replace=False)
-    proteinOrientation=np.repeat(np.reshape(np.ravel(np.indices((k,k)),1),[k**2,2]),params['m_array'].flatten(),axis=0)
-    # [1,0]
-    # for orientation, barbed end is 0, so barbed end is on the positive side. So velocity should be positive.
-#    proteinForm=np.floor(np.random.rand(params['N'])*params['k'])
-    proteinForm=np.ones(params['N'])
-    mask=np.ones(params['N'])
-    mask[position]=0
-    proteinForm[np.where(mask)]=-1 #-1 indicate no protein, 0 is ATP, 1 is ADP
-    proteinForm_pos=proteinForm[position]
-
-    init={}
-    init['pos']=position
-    init['domain']=proteinOrientation
-    init['form']=proteinForm_pos
-    init['params']=params
-    init['mode']='list'
-    aa=InteractionSpace(init)
-#    t=aa.timeSteps(NN=NN)
-#    print t
+class createSim(object):
+#(fN,NN=10000,xi=-1.,rateHydro=1e-3,N=50,m=30,eps=-100.):
+    def __init__(self,params={'NN':10000,'xi':-1.,'rateHydro':1e-3,'N':50,'m':30,'eps':-100.}):
+        self.params=params
+        
+    def __call__(self,fN):
+        NN,xi,rateHydro,N,m,eps=[self.params[x] for x in ['NN','xi','rateHydro','N','m','eps']]
+        k=2
+        h=2
+        m_array=np.array([[0,m],[0,0]])
+        eps=eps # to make it essentially impossible
+        m=np.sum(m_array)
+        params={'N':N,'m':m,'k':k,'h':h,
+                    'T':1.,'xi':None,'eps':None,
+                    'isCircular':True,
+                    'transRotRatio':1.,
+                    'rateHydro':rateHydro,
+                    'm_array':m_array,
+                    'dist_cutoff':2.,
+                    'D_mono':1.,
+                    'H':lambda x,y:H_actin(x,y,eps=eps,xi=xi)}
     
-    sim_params={}
-    sim_params['time']=1e3
-    sim_params['nstep']=NN
-    sim_params['mode']='nstep'
-    bb=intSpaceSim(aa,params=sim_params)
+    
+        position=np.random.choice(range(N),m,replace=False)
+        proteinOrientation=np.repeat(np.reshape(np.ravel(np.indices((k,k)),1),[k**2,2]),params['m_array'].flatten(),axis=0)
+        # [1,0]
+        # for orientation, barbed end is 0, so barbed end is on the positive side. So velocity should be positive.
+    #    proteinForm=np.floor(np.random.rand(params['N'])*params['k'])
+        proteinForm=np.ones(params['N'])
+        mask=np.ones(params['N'])
+        mask[position]=0
+        proteinForm[np.where(mask)]=-1 #-1 indicate no protein, 0 is ATP, 1 is ADP
+        proteinForm_pos=proteinForm[position]
+    
+        init={}
+        init['pos']=position
+        init['domain']=proteinOrientation
+        init['form']=proteinForm_pos
+        init['params']=params
+        init['mode']='list'
+        aa=InteractionSpace(init)
+    #    t=aa.timeSteps(NN=NN)
+    #    print t
+        
+        sim_params={'nstep':NN}
+        bb=intSpaceSim(aa,params=sim_params)
+    
+        oligoData,monoData,trace,form=bb.sim()
+        oligoData=bb.posCalc(oligoData)
+#        intSpaceSim.save(fN+'_oligo',oligoData)
+        intSpaceSim.save(fN+'_mono',monoData)
+        intSpaceSim.save(fN+'_trace',trace)
+        oligoSummary=intSpaceSim.averageCalc(oligoData,form,bb.intSpace.params['N'],bb.intSpace.params['m'])
+        intSpaceSim.save(fN+'_summary',oligoSummary)
+        oneVal=intSpaceSim.oneValCalc(oligoSummary,trace,bb.intSpace.params['m'])
+        intSpaceSim.save(fN+'_oneVal',oneVal)
+        return fN
 
-    oligoData,monoData,trace=bb.sim()
-    oligoData=bb.posCalc(oligoData)
-    intSpaceSim.save(fN+'_oligo',oligoData)
-    intSpaceSim.save(fN+'_mono',monoData)
-    intSpaceSim.save(fN+'_trace',trace)
-    oligoSummary=intSpaceSim.averageCalc(oligoData,bb.intSpace.params['N'])
-    intSpaceSim.save(fN+'_summary',oligoSummary)
+
+def createSim_star(ar):
+    np.random.seed()
+    return createSim(ar[1])(ar[0])
+
+def repeatSim(params_list,nRep,maxNCore=24):
+    args_list=params_list*nRep
+    ll=len(params_list)
+    fN_list=[x+'_REP-'+str(i/ll) for x,i in zip([fN_func(param) for param in params_list]*nRep,xrange(nRep*len(params_list)))]
+    args_list=[(fN,x) for fN,x in zip(fN_list,args_list)]
+    pool=Pool(min(len(params_list)*nRep,maxNCore))
+    pool.map(createSim_star,args_list)
+#    [createSim_star(args_list[i]) for i in xrange(nRep)]
+    return args_list
+
+def fN_func(param):
+    NN,xi,rateHydro,N,m,eps=[param[x] for x in ['NN','xi','rateHydro','N','m','eps']]
+    fN='N-'+str(N)+'_m-'+str(m)+'_NN-'+str(NN)+'_xi-'+str(xi)+'_rh-'+str(rateHydro)+'_eps-'+str(eps)
     return fN
+
+def defaultParam(changeVar={}):
+    dft={'NN':1000000,'xi':-1.,'rateHydro':1e-1,'N':50,'m':30,'eps':-100.}
+    for key,val in changeVar.iteritems():
+        dft[key]=val
+    return dft
+
+def resultPlot(varName,varScale,params_list,nRep):
+    x_list=[param[varName] for param in params_list]
+    if varName=='xi':
+        i=0
+        for x in x_list:
+            x_list[i]=-x
+            i+=1
+    fN_list=[fN_func(param) for param in params_list]
+    meanList=[]
+    stdList=[]
+    for fN in fN_list:
+        repRslt=[]
+        for i in xrange(nRep):
+            temp=fN+'_REP-'+str(i)
+            repRslt.append(pd.DataFrame.from_csv(temp+'_oneVal'+'.csv').loc[0])
+        repRslt=pd.DataFrame(repRslt)
+        
+        meanDic=dict.fromkeys(repRslt.keys())
+        stdDic=dict.fromkeys(repRslt.keys())
+        for key in repRslt.keys():
+            meanDic[key]=np.mean(repRslt[key])
+            stdDic[key]=np.std(repRslt[key])
+        meanList.append(meanDic)
+        stdList.append(stdDic)
+    
+    meanList=pd.DataFrame(meanList)
+    stdList=pd.DataFrame(stdList)
+    
+    labels=['v(lt)','v(t)','atp','l_atp','r_atp','l2_atp','r2_atp']
+    for label in labels:
+        fig=plt.figure()
+        ax=fig.add_subplot(111)
+        ax.plot(x_list,meanList[label],'-b',lw=2,label=label+'_mean')
+        ax.fill_between(x_list,meanList[label]-stdList[label],meanList[label]+stdList[label],color='purple',alpha=0.3,label=label+'_std')
+        ax.set_xlabel(varName)
+        ax.set_ylabel(label)
+        ax.set_xscale(varScale)
+        handles, labels = ax.get_legend_handles_labels()
+        lgd = ax.legend(handles, labels, loc=3, bbox_to_anchor=(0.,1.02,1.,.102),ncol=2,mode='expand',borderaxespad=0.)
+        plt.savefig(fN+'_trrun_'+label+'.pdf', bbox_extra_artists=(lgd,), bbox_inches='tight')
+        plt.close()
+    
+    for fN in fN_list:
+        l_mean,l_std=distrPlot(fN,nRep=nRep,keyStub='l',m=params_list[0]['m'])
+        f_mean,f_std=distrPlot(fN,nRep=nRep,keyStub='form',m=params_list[0]['m'])
+    
+    pickle.dump({'mean':meanList,'std':stdList,'var':x_list,'f_mean':f_mean,'f_std':f_std,'l_mean':l_mean,'l_std':l_std},open(varName+'_test.p','wr'))
+    
+ 
+def distrPlot(fN,nRep=30,keyStub='l',m=30):
+    keys=[keyStub+'_'+str(i+1) for i in xrange(m)]
+    ys=[]
+    for i in xrange(nRep):
+        temp=fN+'_REP-'+str(i)
+        su=pd.DataFrame.from_csv(temp+'_oneVal.csv').loc[0]
+        y=[su[key] for key in keys]
+        ys.append(y)
+    ys=np.array(ys)
+    y_mean=np.mean(ys,axis=0)
+    y_std=np.std(ys,axis=0)
+    x=range(m)
+    fig=plt.figure()
+    ax=fig.add_subplot(111)
+    ax.plot(x,y_mean,'-b',lw=2,label=keyStub+'--'+fN)
+    ax.fill_between(x,y_mean-y_std,y_mean+y_std,color='purple',alpha=0.3,label='std')
+    if keyStub=='l':
+        ax.set_xlabel('length')
+    elif keyStub=='form':
+        ax.set_xlabel('pos from + end')
+    else:
+        raise ValueError('keyStub not valid')
+    ax.set_ylabel('prob')
+    handles, labels = ax.get_legend_handles_labels()
+    lgd = ax.legend(handles, labels, loc=3, bbox_to_anchor=(0.,1.02,1.,.102),ncol=1,mode='expand',borderaxespad=0.)
+    plt.savefig(fN+'_DISTR-'+keyStub+'.pdf', bbox_extra_artists=(lgd,), bbox_inches='tight')   
+    plt.close()
+    return y_mean,y_std
+            
+        
+    
 
 
 if __name__ == "__main__":
-    N=50
-    m=30
-    NN=10000
-    xi=-1.
-    rateHydro=1e-1
+    nRep=10
+    maxNCore=100
+    rH_list=np.logspace(-3,2,10)
+    params_list=[defaultParam({'rateHydro':rH}) for rH in rH_list]
+    args_list=repeatSim(params_list,nRep,maxNCore=maxNCore)
+    resultPlot('rateHydro','log',params_list,nRep)
     
-    fN='N-'+str(N)+'_m-'+str(m)+'_NN-'+str(NN)+'_xi-'+str(xi)+'_rh-'+str(rateHydro)
-#    createSim(fN,NN=NN,xi=xi,rateHydro=rateHydro)
-#    oligoSummary=intSpaceSim.averageCalc(fN+'_oligo',N)
-#    intSpaceSim.save(fN+'_summary',oligoSummary)
+    xi_list=-np.logspace(-3,1,10)
+    params_list=[defaultParam({'xi':xi}) for xi in xi_list]
+    args_list=repeatSim(params_list,nRep,maxNCore=maxNCore)
+    resultPlot('xi','log',params_list,nRep)
+
+#    createSim(defaultParam())(fN_func(defaultParam()))
 #    intSpaceSim.oligoGraph(N,fN,fN+'_oligo',graphParams={'truncate':True,'cutoffTime':20.,'cutoffNStep':NN/70,'mode':'centered'})
 #    intSpaceSim.runningCalc(fN,fN+'_summary')
-    intSpaceSim.traceRunningPlot(fN,fN+'_trace')
+#    intSpaceSim.traceRunningPlot(fN,fN+'_trace')
 #    
 #    intSpaceSim.averageGraph(fN+'_summary')
-#    intSpaceSim.monoGraph(fN+'_mono',fN+'_trace')
+#    intSpaceSim.monoGraph(fN+'_mono')
 #    intSpaceSim.statistics(fN+'_trace')
 
-#    v_tread=[]
-#    for i in xrange(10):
-#        createSim(fN,NN=NN,xi=-1.,rateHydro=1e-2)
-#        v_tread.append(intSpaceSim.treadmillingFilaments(fN+'_summary'))
-#    pdb.set_trace()
