@@ -20,4 +20,6 @@ would jump out the help for how to use it.
 One example would be 
 > python actinTreadmill_exp.py -v rateHydro -l -3 1 -s log -n 10
 
-would run simulation for varying hydrolysis rate from 10^(-3) to 10^(1) with 10 pts in between, with other parameters being default parameters, such as using 24 cores to run in parallel and doing 10 repeats for each hydrolysis rate.
+would run simulation for varying hydrolysis rate from 10^(-3) to 10^(1) with 10 pts in between, with other parameters being default parameters, such as using 24 cores to run in parallel and doing 10 repeats for each hydrolysis rate, and data and graphs will be saved to the same folder as where these files are in.
+
+After running this, data and graphs will be generated. Have a look at them!
