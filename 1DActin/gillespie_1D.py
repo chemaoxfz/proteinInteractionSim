@@ -551,40 +551,43 @@ class intSpaceSim():
             if graphParams['mode']=='centered':
                 xAxis=tempDic['time']-tStart
                 plt.plot(xAxis,pos_cum,'k')
-                leftEndPos=pos_cum-tempDic['len']/2.
-                rightEndPos=pos_cum+tempDic['len']/2.
-                plt.fill_between(xAxis,leftEndPos,rightEndPos,color='k',alpha=0.3)
-                leftDMask=tempDic['form_leftEnd']==1
-                leftTMask=np.logical_not(leftDMask)
-                rightDMask=tempDic['form_rightEnd']==1
-                rightTMask=np.logical_not(rightDMask)
-                leftD2Mask=tempDic['form_leftEnd2']==1
-                leftT2Mask=np.logical_not(leftDMask)
-                rightD2Mask=tempDic['form_rightEnd2']==1
-                rightT2Mask=np.logical_not(rightDMask)
-                color_T='r'
-                color_D='b'
-                markerSize=0.6
-                plt.scatter(xAxis[leftDMask],leftEndPos[leftDMask],color=color_D,s=markerSize,alpha=0.3)
-                plt.scatter(xAxis[leftTMask],leftEndPos[leftTMask],color=color_T,s=2*markerSize,alpha=1)
-                plt.scatter(xAxis[rightDMask],rightEndPos[rightDMask],color=color_D,s=markerSize,alpha=0.3)
-                plt.scatter(xAxis[rightTMask],rightEndPos[rightTMask],color=color_T,s=2*markerSize,alpha=1)
-                plt.scatter(xAxis[leftD2Mask],leftEndPos[leftD2Mask]+1,color=color_D,s=markerSize,alpha=0.3)
-                plt.scatter(xAxis[leftT2Mask],leftEndPos[leftT2Mask]+1,color=color_T,s=2*markerSize,alpha=1)
-                plt.scatter(xAxis[rightD2Mask],rightEndPos[rightD2Mask]-1,color=color_D,s=markerSize,alpha=0.3)
-                plt.scatter(xAxis[rightT2Mask],rightEndPos[rightT2Mask]-1,color=color_T,s=2*markerSize,alpha=1)
+                
                 ax.set_xlabel('time since born (AU)')
                 ax.set_ylabel('displacement since born')
             elif graphParams['mode']=='not_centered':
-                plt.plot(tempDic['time'],pos_cum+pos[pos.index[0]],'k')
+                xAxis=tempDic['time']
+                plt.plot(xAxis,pos_cum+pos[pos.index[0]],'k')
+                pos_cum=pos_cum+pos[pos.index[0]]
                 ax.set_xlabel('time')
                 ax.set_ylabel('pos')
             else:
                 raise ValueError('not valid mode option in graphParams')
+            leftEndPos=pos_cum-tempDic['len']/2.
+            rightEndPos=pos_cum+tempDic['len']/2.
+            plt.fill_between(xAxis,leftEndPos,rightEndPos,color='k',alpha=0.3)
+            leftDMask=tempDic['form_leftEnd']==1
+            leftTMask=np.logical_not(leftDMask)
+            rightDMask=tempDic['form_rightEnd']==1
+            rightTMask=np.logical_not(rightDMask)
+            leftD2Mask=tempDic['form_leftEnd2']==1
+            leftT2Mask=np.logical_not(leftDMask)
+            rightD2Mask=tempDic['form_rightEnd2']==1
+            rightT2Mask=np.logical_not(rightDMask)
+            color_T='r'
+            color_D='b'
+            markerSize=0.6
+            plt.scatter(xAxis[leftDMask],leftEndPos[leftDMask],color=color_D,s=markerSize,alpha=0.3)
+            plt.scatter(xAxis[leftTMask],leftEndPos[leftTMask],color=color_T,s=2*markerSize,alpha=1)
+            plt.scatter(xAxis[rightDMask],rightEndPos[rightDMask],color=color_D,s=markerSize,alpha=0.3)
+            plt.scatter(xAxis[rightTMask],rightEndPos[rightTMask],color=color_T,s=2*markerSize,alpha=1)
+            plt.scatter(xAxis[leftD2Mask],leftEndPos[leftD2Mask]+1,color=color_D,s=markerSize,alpha=0.3)
+            plt.scatter(xAxis[leftT2Mask],leftEndPos[leftT2Mask]+1,color=color_T,s=2*markerSize,alpha=1)
+            plt.scatter(xAxis[rightD2Mask],rightEndPos[rightD2Mask]-1,color=color_D,s=markerSize,alpha=0.3)
+            plt.scatter(xAxis[rightT2Mask],rightEndPos[rightT2Mask]-1,color=color_T,s=2*markerSize,alpha=1)
         plt.savefig(fN+'_oligoGraph'+'_'+graphParams['mode']+'.pdf')
     
     @staticmethod
-    def runningCalc(fN,summaryData,trace,npts=1000):
+    def runningCalc(fN,summaryData,npts=1000):
         if isinstance(summaryData,str):
             summaryData=pd.DataFrame.from_csv(summaryData+'.csv')
         
@@ -930,7 +933,7 @@ class createSim(object):
     
         oligoData,monoData,trace,form=bb.sim()
         oligoData=bb.posCalc(oligoData)
-#        intSpaceSim.save(fN+'_oligo',oligoData)
+        intSpaceSim.save(fN+'_oligo',oligoData)
         intSpaceSim.save(fN+'_mono',monoData)
         intSpaceSim.save(fN+'_trace',trace)
         oligoSummary=intSpaceSim.averageCalc(oligoData,form,bb.intSpace.params['N'],bb.intSpace.params['m'])
@@ -1048,8 +1051,10 @@ def distrPlot(fN,nRep=30,keyStub='l',m=30):
 
 
 if __name__ == "__main__":
+    global dataFolder
+    dataFolder='/data/fangzhou/actin'
     nRep=10
-    maxNCore=100
+    maxNCore=4
     rH_list=np.logspace(-3,2,10)
     params_list=[defaultParam({'rateHydro':rH}) for rH in rH_list]
     args_list=repeatSim(params_list,nRep,maxNCore=maxNCore)
@@ -1059,9 +1064,13 @@ if __name__ == "__main__":
     params_list=[defaultParam({'xi':xi}) for xi in xi_list]
     args_list=repeatSim(params_list,nRep,maxNCore=maxNCore)
     resultPlot('xi','log',params_list,nRep)
+    
+#    aa=defaultParam()
+#    fN=fN_func(aa)
+#    createSim(aa)(fN)
+#    intSpaceSim.oligoGraph(aa['N'],fN,fN+'_oligo',graphParams={'truncate':True,'cutoffTime':20.,'cutoffNStep':aa['NN']/200,'mode':'centered'})
 
 #    createSim(defaultParam())(fN_func(defaultParam()))
-#    intSpaceSim.oligoGraph(N,fN,fN+'_oligo',graphParams={'truncate':True,'cutoffTime':20.,'cutoffNStep':NN/70,'mode':'centered'})
 #    intSpaceSim.runningCalc(fN,fN+'_summary')
 #    intSpaceSim.traceRunningPlot(fN,fN+'_trace')
 #    
