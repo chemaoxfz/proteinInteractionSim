@@ -476,7 +476,25 @@ class intSpaceSim():
         print v_tread
         return v_tread
         
+         
+def H_actin(endDomainVec,endFormVec,eps=-10.,xi=-1.):
+    # energy function that return the interaction energy between two proteins.
+    # form: 1 is ADP, 0 is ATP.
+    # domain: 0 is barbed, 1 is pointed.
+
+    h=k=2
+    H_array=np.zeros([h,h,k,k])
+    H_array[0][0]=np.array([[0,eps],
+                           [eps,0]])
+    H_array[0][1]=np.array([[0,xi],
+                           [eps,0]])
+    H_array[1][0]=H_array[0][1].T
+    H_array[1][1]=np.array([[0,xi],
+                           [xi,0]])
+    getE=lambda idx:H_array[endFormVec[idx][0]][endFormVec[idx][1]][endDomainVec[idx][0]][endDomainVec[idx][1]]
+    return np.array(map(getE,xrange(len(endDomainVec))))
         
+     
 
 class createSim(object):
     # a class for really creating a simulation. Also callable to execute the simulation.
@@ -656,6 +674,18 @@ def defaultParam(changeVar={}):
 
 if __name__ == "__main__":
     global dataFolder
+#    dataFolder='/data/fangzhou/actin'
+#    nRep=10
+#    maxNCore=4
+#    rH_list=np.logspace(-3,2,10)
+#    params_list=[defaultParam({'rateHydro':rH}) for rH in rH_list]
+#    args_list=repeatSim(params_list,nRep,maxNCore=maxNCore)
+#    resultPlot('rateHydro','log',params_list,nRep)
+#    
+#    xi_list=-np.logspace(-3,1,10)
+#    params_list=[defaultParam({'xi':xi}) for xi in xi_list]
+#    args_list=repeatSim(params_list,nRep,maxNCore=maxNCore)
+#    resultPlot('xi','log',params_list,nRep)
     
     parser=argparse.ArgumentParser(description='Simulation of actin treadmilling in 1D space.')
 #    parser.add_argument('-m','--mode',type=str,nargs='?',default='var',
@@ -670,7 +700,7 @@ if __name__ == "__main__":
                         help='number of steps for each simulation to run.')
     parser.add_argument('-v','--var',type=str,nargs='?',default='rateHydro',
                         help='the variable to vary. rateHydro, xi, N, m, eps')
-    parser.add_argument('-l','--lim',type=int,nargs=2,default=[1,3],
+    parser.add_argument('-l','--lim',type=int,nargs=2,default=[-3,1],
                         help='min and max of the variable value')
     parser.add_argument('-s','--scale',type=str,nargs='?',default='log',
                         help='scale for the variable values, log or linear')
@@ -696,7 +726,7 @@ if __name__ == "__main__":
     else:
         raise ValueError('invalid variable scale option')
     
-    params_list=[defaultParam({varName:var,'NN':NN} for var in var_list)]
+    params_list=[defaultParam({varName:var,'NN':NN}) for var in var_list]
     args_list=repeatSim(params_list,nRep,maxNCore=maxNCore)
     resultPlot(varName,varScale,params_list,nRep)
     
